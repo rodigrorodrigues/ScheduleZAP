@@ -33,20 +33,39 @@ function loadSchedules() {
   try {
     if (fs.existsSync(SCHEDULE_FILE)) {
       const data = fs.readFileSync(SCHEDULE_FILE, "utf8");
-      return JSON.parse(data);
+      // Verificar se o arquivo está vazio ou só tem espaços
+      if (!data || data.trim() === "") {
+        console.log(
+          "📄 Arquivo schedules.json vazio, iniciando com array vazio"
+        );
+        return [];
+      }
+      const parsed = JSON.parse(data);
+      // Garantir que é um array
+      return Array.isArray(parsed) ? parsed : [];
     }
   } catch (error) {
-    console.error("❌ Erro ao carregar agendamentos:", error);
+    console.error("❌ Erro ao carregar agendamentos:", error.message);
+    // Se o arquivo está corrompido, vamos recriar
+    try {
+      console.log("🔄 Recriando arquivo schedules.json corrompido");
+      fs.writeFileSync(SCHEDULE_FILE, "[]");
+    } catch (writeError) {
+      console.error("❌ Erro ao recriar schedules.json:", writeError.message);
+    }
   }
   return [];
 }
 
 function saveSchedules(schedules) {
   try {
-    fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(schedules, null, 2));
+    // Garantir que schedules é um array
+    const dataToSave = Array.isArray(schedules) ? schedules : [];
+    const jsonData = JSON.stringify(dataToSave, null, 2);
+    fs.writeFileSync(SCHEDULE_FILE, jsonData);
     console.log("💾 Agendamentos salvos com sucesso");
   } catch (error) {
-    console.error("❌ Erro ao salvar agendamentos:", error);
+    console.error("❌ Erro ao salvar agendamentos:", error.message);
   }
 }
 
