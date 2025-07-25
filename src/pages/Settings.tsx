@@ -126,20 +126,22 @@ export default function Settings() {
         isConnected: false,
       };
 
-      // Testar conectividade antes de salvar
-      const testResult = await scheduledAPI.testEvolutionAPI({
-        apiUrl: newConfig.apiUrl,
-        instance: newConfig.instanceName,
-        token: newConfig.token,
-      });
+      // Salvar configuração
+      const savedConfig = await localAPI.setEvolutionConfig(newConfig);
+      setConfig(savedConfig);
 
-      if (testResult.success) {
-        localAPI.setEvolutionConfig(newConfig);
-        setConfig(newConfig);
-        setConnectionStatus("connected");
+      // Se a configuração foi salva com sucesso
+      if (savedConfig.isConnected) {
         toast.success("Configuração salva e testada com sucesso!");
+        setConnectionStatus("connected");
       } else {
-        throw new Error(testResult.error || "Falha no teste de conectividade");
+        // Se o teste falhou mas a configuração foi salva
+        toast.success("Configuração salva!");
+        toast("⚠️ Não foi possível conectar à Evolution API", {
+          icon: "⚠️",
+          duration: 4000,
+        });
+        setConnectionStatus("disconnected");
       }
     } catch (error: any) {
       console.error("❌ Erro ao salvar configuração:", error);

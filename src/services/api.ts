@@ -342,88 +342,132 @@ export const localAPI = {
     }
   },
 
-  setEvolutionConfig: (config: EvolutionConfig) => {
-    localStorage.setItem("evolution_config", JSON.stringify(config));
-  },
-
-  // Contatos
-  getContacts: async (): Promise<Contact[]> => {
+  setEvolutionConfig: async (config: EvolutionConfig) => {
     try {
-      const config = localAPI.getEvolutionConfig();
-      if (!config.apiUrl || !config.instanceName || !config.token) {
-        throw new Error("Configuração da Evolution API não encontrada");
+      // Testar conectividade antes de salvar
+      if (config.apiUrl && config.instanceName && config.token) {
+        try {
+          const testResult = await scheduledAPI.testEvolutionAPI({
+            apiUrl: config.apiUrl,
+            instance: config.instanceName,
+            token: config.token,
+          });
+
+          if (!testResult.success) {
+            throw new Error(testResult.error || "API não está respondendo");
+          }
+
+          // Se chegou aqui, o teste foi bem sucedido
+          config.isConnected = true;
+        } catch (error: any) {
+          // Não impedir o salvamento se o teste falhar
+          console.warn(
+            "⚠️ Aviso: Falha no teste de conectividade:",
+            error.message
+          );
+          config.isConnected = false;
+        }
+      } else {
+        config.isConnected = false;
       }
 
-      const response = await evolutionAPI.getContacts(
-        config.apiUrl,
-        config.instanceName,
-        config.token
-      );
+      // Salvar configuração mesmo se o teste falhar
+      localStorage.setItem("evolution_config", JSON.stringify(config));
+      console.log("✅ Configuração salva:", config);
 
-      return response.data || [];
-    } catch (error) {
-      console.error("Erro ao obter contatos:", error);
-      return [];
+      return config;
+    } catch (error: any) {
+      console.error("❌ Erro ao salvar configuração:", error);
+      throw new Error("Erro ao salvar configuração: " + error.message);
     }
   },
 
-  // Função para processar mensagens agendadas
-  processScheduledMessages: async () => {
-    try {
-      const messages = await scheduledAPI.getScheduledMessages();
-      const now = new Date();
-      const nowSP = new Date(
-        now.toLocaleString("en-US", {
-          timeZone: "America/Sao_Paulo",
-        })
-      );
+  // Processador de mensagens
+  startMessageProcessor: () => {
+    if (messageProcessorStarted) {
+      console.log("⏭️ Processador já está rodando");
+      return;
+    }
 
-      console.log("Processando mensagens agendadas...");
-      console.log(
-        "Horário atual (SP):",
-        nowSP.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
-      );
+    console.log("🔄 Processador de mensagens agendadas iniciado");
+    messageProcessorStarted = true;
 
-      for (const message of messages) {
-        if (message.status !== "pending") continue;
-
-        const scheduledAt = new Date(message.scheduledAt);
-        const scheduledSP = new Date(
-          scheduledAt.toLocaleString("en-US", {
-            timeZone: "America/Sao_Paulo",
-          })
+    const processMessages = async () => {
+      try {
+        console.log("Processando mensagens agendadas...");
+        console.log(
+          "Horário atual (SP):",
+          new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
         );
 
-        console.log(`Verificando mensagem ${message.id}:`, {
-          scheduled: scheduledSP.toLocaleString("pt-BR", {
-            timeZone: "America/Sao_Paulo",
-          }),
-          status: message.status,
-        });
+        const config = localAPI.getEvolutionConfig();
+        if (
+          !config.apiUrl ||
+          !config.instanceName ||
+          !config.token ||
+          !config.isConnected
+        ) {
+          console.log(
+            "⏭️ Pulando processamento: Evolution API não configurada"
+          );
+          return;
+        }
 
-        // Se a mensagem deve ser enviada agora
-        if (scheduledSP <= nowSP) {
-          console.log(`Enviando mensagem ${message.id}...`);
+        // Buscar mensagens agendadas
+        const messages = await scheduledAPI.getScheduledMessages();
+        if (messages.length === 0) {
+          console.log("📭 Nenhuma mensagem agendada");
+          return;
+        }
 
-          try {
-            const success = await localAPI.sendMessage(
-              message.contact.number,
-              message.message
-            );
+        console.log(`📬 ${messages.length} mensagens encontradas`);
 
-            if (success) {
-              await scheduledAPI.cancelScheduledMessage(message.id);
-              console.log(`Mensagem ${message.id} enviada com sucesso!`);
+        // Processar cada mensagem
+        for (const message of messages) {
+          if (message.status === "pending") {
+            const scheduledTime = new Date(message.scheduledAt);
+            if (scheduledTime <= new Date()) {
+              console.log(`🚀 Processando mensagem ${message.id}`);
+              try {
+                await scheduledAPI.testEvolutionAPI({
+                  apiUrl: message.apiUrl,
+                  instance: message.instance,
+                  token: message.token,
+                  number: message.contact.number,
+                  message: message.message,
+                });
+                console.log(`✅ Mensagem ${message.id} enviada com sucesso`);
+              } catch (error: any) {
+                console.error(
+                  `❌ Erro ao processar mensagem ${message.id}:`,
+                  error.message
+                );
+              }
             } else {
-              console.error(`Falha ao enviar mensagem ${message.id}`);
+              console.log(
+                `⏳ Mensagem ${
+                  message.id
+                } agendada para ${scheduledTime.toLocaleString("pt-BR")}`
+              );
             }
-          } catch (error) {
-            console.error(`Erro ao enviar mensagem ${message.id}:`, error);
           }
         }
+      } catch (error: any) {
+        console.error("❌ Erro no processador:", error.message);
       }
-    } catch (error) {
-      console.error("Erro ao processar mensagens agendadas:", error);
+    };
+
+    // Iniciar processador
+    messageProcessorInterval = setInterval(processMessages, 60000); // 60 segundos
+    processMessages(); // Executar imediatamente
+  },
+
+  stopMessageProcessor: () => {
+    if (messageProcessorInterval) {
+      clearInterval(messageProcessorInterval);
+      messageProcessorInterval = null;
+      messageProcessorStarted = false;
+      console.log("⏹️ Processador de mensagens parado");
     }
   },
 
@@ -555,19 +599,6 @@ export const localAPI = {
       }
       return false;
     }
-  },
-
-  // Função para iniciar o processamento automático
-  startMessageProcessor: () => {
-    if (messageProcessorStarted) return;
-    messageProcessorStarted = true;
-    // Processar imediatamente
-    localAPI.processScheduledMessages();
-    // Processar a cada minuto
-    messageProcessorInterval = setInterval(() => {
-      localAPI.processScheduledMessages();
-    }, 60000); // 60 segundos
-    console.log("🔄 Processador de mensagens agendadas iniciado");
   },
 
   // Função para testar se a API está funcionando
