@@ -185,6 +185,124 @@ export const evolutionAPI = {
     ),
 };
 
+interface EvolutionTestResult {
+  success: boolean;
+  baseUrl: boolean;
+  auth: boolean;
+  instance: boolean;
+  instanceInfo: any;
+  messageSent?: boolean;
+}
+
+interface EvolutionTestError {
+  success: false;
+  error: string;
+  details: {
+    status: number | null;
+    data: any;
+    code: string | null;
+  };
+}
+
+// Função para testar conectividade com Evolution API
+async function testEvolutionConnection(
+  apiUrl: string,
+  instance: string,
+  token: string
+): Promise<EvolutionTestResult> {
+  console.log("🔍 Testando conectividade com Evolution API:");
+  console.log(`   URL: ${apiUrl}`);
+  console.log(`   Instância: ${instance}`);
+
+  try {
+    // Teste 1: Verificar se a URL base responde
+    console.log("👉 Teste 1: Verificando URL base...");
+    const baseResponse = await axios.get(apiUrl, {
+      timeout: 10000,
+      validateStatus: null, // Aceitar qualquer status para melhor diagnóstico
+    });
+    console.log(`   Status: ${baseResponse.status}`);
+    console.log(`   Resposta:`, baseResponse.data);
+
+    if (baseResponse.status !== 200) {
+      throw new Error(`URL base retornou status ${baseResponse.status}`);
+    }
+
+    // Teste 2: Verificar autenticação
+    console.log("👉 Teste 2: Verificando autenticação...");
+    const authResponse = await axios.get(`${apiUrl}/instance/fetchInstances`, {
+      headers: { apikey: token },
+      timeout: 10000,
+      validateStatus: null,
+    });
+    console.log(`   Status: ${authResponse.status}`);
+    console.log(`   Resposta:`, authResponse.data);
+
+    if (authResponse.status === 401) {
+      throw new Error("Token de autenticação inválido");
+    }
+    if (authResponse.status !== 200) {
+      throw new Error(`Erro de autenticação: status ${authResponse.status}`);
+    }
+
+    // Teste 3: Verificar instância específica
+    console.log("👉 Teste 3: Verificando instância...");
+    const instanceResponse = await axios.get(
+      `${apiUrl}/instance/info/${instance}`,
+      {
+        headers: { apikey: token },
+        timeout: 10000,
+        validateStatus: null,
+      }
+    );
+    console.log(`   Status: ${instanceResponse.status}`);
+    console.log(`   Resposta:`, instanceResponse.data);
+
+    if (instanceResponse.status === 404) {
+      throw new Error(`Instância '${instance}' não encontrada`);
+    }
+    if (instanceResponse.status !== 200) {
+      throw new Error(
+        `Erro ao verificar instância: status ${instanceResponse.status}`
+      );
+    }
+
+    return {
+      success: true,
+      baseUrl: baseResponse.status === 200,
+      auth: authResponse.status === 200,
+      instance: instanceResponse.status === 200,
+      instanceInfo: instanceResponse.data,
+    };
+  } catch (error: any) {
+    console.error("❌ Erro no teste de conectividade:", {
+      message: error.message,
+      status: error.response?.status,
+      data: error.response?.data,
+      code: error.code,
+    });
+
+    // Erros específicos
+    if (error.code === "ECONNREFUSED") {
+      throw new Error("Não foi possível conectar à API (conexão recusada)");
+    }
+    if (error.code === "ECONNABORTED") {
+      throw new Error("Tempo de conexão esgotado");
+    }
+    if (error.code === "ERR_BAD_REQUEST") {
+      throw new Error("URL da API inválida");
+    }
+    if (error.response?.status === 401) {
+      throw new Error("Token de autenticação inválido");
+    }
+    if (error.response?.status === 404) {
+      throw new Error("Endpoint não encontrado - verifique a URL da API");
+    }
+
+    throw new Error(error.message || "Erro desconhecido ao testar conexão");
+  }
+}
+
 // Serviços de mensagens agendadas via backend
 export const scheduledAPI = {
   getScheduledMessages: async (): Promise<ScheduledMessage[]> => {
@@ -289,17 +407,64 @@ export const scheduledAPI = {
     token: string;
     number?: string;
     message?: string;
-  }) => {
+  }): Promise<EvolutionTestResult | EvolutionTestError> => {
     try {
-      const response = await api.post("/debug/test-evolution", config);
-      return response.data;
-    } catch (error: any) {
-      console.error("❌ Erro ao testar Evolution API:", error);
-      throw new Error(
-        error.response?.data?.error ||
-          error.response?.data?.message ||
-          "Erro ao testar Evolution API"
+      // Limpar URL
+      const cleanedUrl = cleanApiUrl(config.apiUrl);
+
+      // Testar conectividade básica
+      const testResult = await testEvolutionConnection(
+        cleanedUrl,
+        config.instance,
+        config.token
       );
+
+      // Se pediu para testar mensagem
+      if (testResult.success && config.number && config.message) {
+        console.log("👉 Teste 4: Simulando envio de mensagem...");
+        const messageResponse = await axios.post(
+          `${cleanedUrl}/message/sendText/${config.instance}`,
+          {
+            number: config.number,
+            text: config.message,
+            delay: 1000,
+          },
+          {
+            headers: { apikey: config.token },
+            timeout: 10000,
+            validateStatus: null,
+          }
+        );
+        console.log(`   Status: ${messageResponse.status}`);
+        console.log(`   Resposta:`, messageResponse.data);
+
+        if (messageResponse.status !== 200 && messageResponse.status !== 201) {
+          throw new Error(
+            `Erro ao simular envio: status ${messageResponse.status}`
+          );
+        }
+
+        testResult.messageSent = true;
+      }
+
+      return testResult;
+    } catch (error: any) {
+      console.error("❌ Erro ao testar Evolution API:", {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+        code: error.code,
+      });
+
+      return {
+        success: false,
+        error: error.message,
+        details: {
+          status: error.response?.status,
+          data: error.response?.data,
+          code: error.code,
+        },
+      };
     }
   },
 };
@@ -353,12 +518,14 @@ export const localAPI = {
             token: config.token,
           });
 
-          if (!testResult.success) {
-            throw new Error(testResult.error || "API não está respondendo");
-          }
+          config.isConnected = testResult.success;
 
-          // Se chegou aqui, o teste foi bem sucedido
-          config.isConnected = true;
+          if (!testResult.success && "error" in testResult) {
+            console.warn(
+              "⚠️ Aviso: Falha no teste de conectividade:",
+              testResult.error
+            );
+          }
         } catch (error: any) {
           // Não impedir o salvamento se o teste falhar
           console.warn(

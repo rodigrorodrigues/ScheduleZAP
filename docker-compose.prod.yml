@@ -14,6 +14,7 @@ services:
     environment:
       - NODE_ENV=production
       - VITE_PASSWORD=${VITE_PASSWORD:-S3nha!2024@zap}
+      - HOST=89.116.171.102
     networks:
       - schedulezap-network
     healthcheck:
@@ -42,6 +43,8 @@ services:
     environment:
       - NODE_ENV=production
       - VITE_PASSWORD=${VITE_PASSWORD:-S3nha!2024@zap}
+      - VITE_API_URL=http://89.116.171.102:8999
+      - HOST=89.116.171.102
     networks:
       - schedulezap-network
     depends_on:

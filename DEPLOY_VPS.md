@@ -5,17 +5,16 @@
 - **IP**: 89.116.171.102
 - **Frontend**: http://89.116.171.102:8988
 - **Backend**: http://89.116.171.102:8999
+- **Evolution API**: http://89.116.171.102:8080
 
 ## 🔧 Configurações Ajustadas
 
 ### ✅ **Mudanças Realizadas:**
 
-1. **Proxy do Vite**: Alterado para `localhost:8999` (sem referência Docker)
-2. **Docker Compose**: Criado `docker-compose.prod.yml` específico para produção
-3. **Placeholder**: URL da API atualizada para IP da VPS
-4. **Script de Deploy**: Criado `deploy.sh` para facilitar deployment
-5. **Função sendMessage**: Melhorada com múltiplos formatos de teste
-6. **Endpoints de Debug**: Adicionados para testar Evolution API
+1. **Proxy do Vite**: Configurado para usar IP local
+2. **Docker Compose**: Configurado com variáveis de ambiente para IP
+3. **Placeholder**: URL da API atualizada para IP
+4. **Script de Deploy**: Usa variáveis de ambiente para IP
 
 ## 🚀 Como Fazer o Deploy
 
@@ -32,6 +31,10 @@ chmod +x deploy.sh
 ### **Opção 2: Manual**
 
 ```bash
+# Configurar variáveis
+export HOST=89.116.171.102
+export VITE_API_URL=http://$HOST:8999
+
 # Parar containers existentes
 docker-compose -f docker-compose.prod.yml down
 
@@ -68,19 +71,6 @@ curl -X POST http://89.116.171.102:8999/api/debug/test-evolution \
 curl http://89.116.171.102:8999/api/schedules
 ```
 
-## 🧪 **Teste Automático**
-
-Use o script de teste para verificar tudo:
-
-```bash
-# Editar configurações no script
-nano test-evolution.sh
-
-# Executar testes
-chmod +x test-evolution.sh
-./test-evolution.sh
-```
-
 ## 📊 **Monitoramento**
 
 ### **Verificar Status:**
@@ -96,18 +86,11 @@ docker-compose -f docker-compose.prod.yml logs -f
 docker-compose -f docker-compose.prod.yml logs -f backend
 ```
 
-### **Logs Importantes:**
-
-- **Processador de mensagens**: Verifica a cada 60s
-- **Agendamentos**: Logs detalhados de cada verificação
-- **Evolution API**: Testa múltiplos formatos de payload/headers
-- **Erros**: Tratamento específico por tipo de erro (401, 404, 400)
-
 ## 🔧 **Configuração da Evolution API**
 
 No frontend (http://89.116.171.102:8988):
 
-1. **URL da API**: `http://89.116.171.102:8080` (ou IP da sua Evolution API)
+1. **URL da API**: `http://89.116.171.102:8080`
 2. **Instância**: Nome da sua instância
 3. **Token**: Seu token de autenticação
 
@@ -127,21 +110,17 @@ No frontend (http://89.116.171.102:8988):
 3. Verifique se o token está correto
 4. Use o script de teste: `./test-evolution.sh`
 
-### **Formatos de API Testados:**
+### **Problemas Comuns:**
 
-A função `sendMessage` agora testa automaticamente:
-
-- `apikey` header
-- `Authorization: Bearer` header
-- `x-api-key` header
-- Endpoint `sendMessage` alternativo
-- Payload com e sem `delay`
+1. **Erro de Conexão**: Verifique se está usando o IP correto
+2. **Erro 404**: Verifique se os serviços estão rodando nas portas corretas
+3. **Erro de CORS**: Já configurado para aceitar o IP
+4. **Erro de Proxy**: Configurado para usar IP local
 
 ## 📝 **Notas Importantes**
 
+- Use sempre o IP em vez do domínio do EasyPanel
 - O backend salva os agendamentos em `./backend/schedules.json`
 - O processador verifica agendamentos a cada 60 segundos
 - Logs detalhados estão disponíveis para debug
 - Healthcheck monitora o backend automaticamente
-- **NOVO**: Função sendMessage testa múltiplos formatos automaticamente
-- **NOVO**: Endpoint para testar conectividade com Evolution API
