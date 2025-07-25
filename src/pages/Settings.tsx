@@ -436,7 +436,7 @@ export default function Settings() {
                     },
                   })}
                   className="input-field flex-1"
-                  placeholder="http://localhost:8999"
+                  placeholder="http://89.116.171.102:8999"
                 />
                 <button
                   type="button"

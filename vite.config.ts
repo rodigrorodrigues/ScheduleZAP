@@ -9,7 +9,7 @@ export default defineConfig({
     host: true,
     proxy: {
       "/api": {
-        target: "http://backend:8999", // nome do serviço backend no docker-compose
+        target: "http://localhost:8999", // Backend local na VPS
         changeOrigin: true,
         secure: false,
       },

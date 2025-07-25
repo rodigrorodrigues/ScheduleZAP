@@ -1,3 +1,5 @@
+version: "3.8"
+
 services:
   backend:
     build:
@@ -6,12 +8,14 @@ services:
     container_name: schedulezap-backend
     restart: unless-stopped
     ports:
-      - "8999:8999" # Backend API port
+      - "8999:8999"
     volumes:
-      - ./backend/schedules.json:/app/schedules.json # Persist schedules.json
+      - ./backend/schedules.json:/app/schedules.json
     environment:
       - NODE_ENV=production
       - VITE_PASSWORD=${VITE_PASSWORD:-S3nha!2024@zap}
+    networks:
+      - schedulezap-network
     healthcheck:
       test:
         [
@@ -34,7 +38,15 @@ services:
     container_name: schedulezap-frontend
     restart: unless-stopped
     ports:
-      - "8988:8988" # Frontend port
+      - "8988:8988"
     environment:
       - NODE_ENV=production
       - VITE_PASSWORD=${VITE_PASSWORD:-S3nha!2024@zap}
+    networks:
+      - schedulezap-network
+    depends_on:
+      - backend
+
+networks:
+  schedulezap-network:
+    driver: bridge
