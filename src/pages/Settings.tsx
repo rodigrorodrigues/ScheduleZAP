@@ -16,7 +16,12 @@ import {
   Send,
   Trash2,
 } from "lucide-react";
-import { localAPI, EvolutionConfig, InstanceInfo } from "../services/api";
+import {
+  localAPI,
+  EvolutionConfig,
+  InstanceInfo,
+  scheduledAPI,
+} from "../services/api";
 import toast from "react-hot-toast";
 import axios from "axios";
 
@@ -63,23 +68,81 @@ export default function Settings() {
     setConnectionStatus(savedConfig.isConnected ? "connected" : "disconnected");
   };
 
+  // Validar URL da Evolution API
+  const validateApiUrl = (url: string) => {
+    if (!url) return "URL da API é obrigatória";
+    if (!/^https?:\/\/.+/.test(url))
+      return "URL deve começar com http:// ou https://";
+    return true;
+  };
+
+  // Validar nome da instância
+  const validateInstanceName = (name: string) => {
+    if (!name) return "Nome da instância é obrigatório";
+    if (!/^[a-zA-Z0-9-_]+$/.test(name))
+      return "Nome deve conter apenas letras, números, - e _";
+    return true;
+  };
+
+  // Validar token
+  const validateToken = (token: string) => {
+    if (!token) return "Token é obrigatório";
+    if (token.length < 32) return "Token muito curto";
+    return true;
+  };
+
   const onSubmit = async (data: SettingsFormData) => {
     setIsLoading(true);
 
     try {
+      // Validar URL
+      const urlValidation = validateApiUrl(data.apiUrl);
+      if (urlValidation !== true) {
+        toast.error(urlValidation);
+        return;
+      }
+
+      // Validar instância
+      const instanceValidation = validateInstanceName(data.instanceName);
+      if (instanceValidation !== true) {
+        toast.error(instanceValidation);
+        return;
+      }
+
+      // Validar token
+      const tokenValidation = validateToken(data.token);
+      if (tokenValidation !== true) {
+        toast.error(tokenValidation);
+        return;
+      }
+
+      // Limpar e formatar dados
       const newConfig: EvolutionConfig = {
-        apiUrl: data.apiUrl,
-        instanceName: data.instanceName,
-        token: data.token,
+        apiUrl: data.apiUrl.trim(),
+        instanceName: data.instanceName.trim(),
+        token: data.token.trim(),
         isConnected: false,
       };
 
-      localAPI.setEvolutionConfig(newConfig);
-      setConfig(newConfig);
+      // Testar conectividade antes de salvar
+      const testResult = await scheduledAPI.testEvolutionAPI({
+        apiUrl: newConfig.apiUrl,
+        instance: newConfig.instanceName,
+        token: newConfig.token,
+      });
+
+      if (testResult.success) {
+        localAPI.setEvolutionConfig(newConfig);
+        setConfig(newConfig);
+        setConnectionStatus("connected");
+        toast.success("Configuração salva e testada com sucesso!");
+      } else {
+        throw new Error(testResult.error || "Falha no teste de conectividade");
+      }
+    } catch (error: any) {
+      console.error("❌ Erro ao salvar configuração:", error);
+      toast.error(error.message || "Erro ao salvar configuração");
       setConnectionStatus("disconnected");
-      toast.success("Configuração salva com sucesso!");
-    } catch (error) {
-      toast.error("Erro ao salvar configuração");
     } finally {
       setIsLoading(false);
     }
@@ -94,14 +157,22 @@ export default function Settings() {
     setIsTestingAPI(true);
 
     try {
-      const isWorking = await localAPI.testAPI(config.apiUrl);
-      if (isWorking) {
+      const testResult = await scheduledAPI.testEvolutionAPI({
+        apiUrl: config.apiUrl,
+        instance: config.instanceName || "test",
+        token: config.token || "test",
+      });
+
+      if (testResult.success) {
         toast.success("API está funcionando!");
+        setConnectionStatus("connected");
       } else {
-        toast.error("API não está respondendo");
+        throw new Error(testResult.error || "API não está respondendo");
       }
     } catch (error: any) {
-      toast.error(error.message || "Erro ao testar API");
+      console.error("❌ Erro ao testar API:", error);
+      toast.error(error.message || "API não está respondendo");
+      setConnectionStatus("disconnected");
     } finally {
       setIsTestingAPI(false);
     }
@@ -241,31 +312,32 @@ export default function Settings() {
   };
 
   const testConnection = async () => {
-    if (!config) return;
+    if (!config?.apiUrl || !config?.instanceName || !config?.token) {
+      toast.error("Configure todos os campos primeiro");
+      return;
+    }
 
     setIsTesting(true);
-    setConnectionStatus("testing");
 
     try {
-      const isConnected = await localAPI.testConnection(
-        config.apiUrl,
-        config.instanceName,
-        config.token
-      );
+      const testResult = await scheduledAPI.testEvolutionAPI({
+        apiUrl: config.apiUrl,
+        instance: config.instanceName,
+        token: config.token,
+        number: "5519994466218",
+        message: "Teste de conexão do ScheduleZAP",
+      });
 
-      if (isConnected) {
-        const updatedConfig = { ...config, isConnected: true };
-        localAPI.setEvolutionConfig(updatedConfig);
-        setConfig(updatedConfig);
+      if (testResult.success) {
+        toast.success("Conexão testada com sucesso!");
         setConnectionStatus("connected");
-        toast.success("Conexão com Evolution API estabelecida!");
       } else {
-        setConnectionStatus("disconnected");
-        toast.error("Não foi possível conectar à Evolution API");
+        throw new Error(testResult.error || "Falha no teste de conexão");
       }
     } catch (error: any) {
+      console.error("❌ Erro ao testar conexão:", error);
+      toast.error(error.message || "Falha no teste de conexão");
       setConnectionStatus("disconnected");
-      toast.error(error.message || "Erro ao testar conexão");
     } finally {
       setIsTesting(false);
     }

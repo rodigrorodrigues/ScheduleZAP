@@ -7,16 +7,22 @@ const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  timeout: 10000, // 10 segundos de timeout
 });
 
-// Interceptor para adicionar token de autenticação da Evolution API
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem("evolution_token");
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+// Interceptor para tratar erros
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    console.error("❌ Erro na requisição:", {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      data: error.response?.data,
+    });
+    return Promise.reject(error);
   }
-  return config;
-});
+);
 
 export interface Contact {
   id: string;
@@ -29,8 +35,14 @@ export interface ScheduledMessage {
   contact: Contact;
   message: string;
   scheduledAt: string;
-  status: "pending" | "sent" | "cancelled";
+  status: "pending" | "sent" | "cancelled" | "failed";
   createdAt: string;
+  processedAt: string | null;
+  error: string | null;
+  apiUrl: string;
+  instance: string;
+  token: string;
+  retries: number;
 }
 
 export interface ScheduleMessageRequest {
@@ -176,35 +188,119 @@ export const evolutionAPI = {
 // Serviços de mensagens agendadas via backend
 export const scheduledAPI = {
   getScheduledMessages: async (): Promise<ScheduledMessage[]> => {
-    const res = await api.get("/schedules");
-    const data = Array.isArray(res.data) ? res.data : [];
-    return data.map((msg: any) => ({
-      id: msg.id,
-      contact: { id: msg.number, name: msg.number, number: msg.number },
-      message: msg.message,
-      scheduledAt: msg.scheduledAt,
-      status: msg.status,
-      createdAt: msg.createdAt || msg.scheduledAt,
-    }));
+    try {
+      const res = await api.get("/schedules");
+      const data = Array.isArray(res.data) ? res.data : [];
+      return data.map((msg: any) => ({
+        id: msg.id,
+        contact: { id: msg.number, name: msg.number, number: msg.number },
+        message: msg.message,
+        scheduledAt: msg.scheduledAt,
+        status: msg.status,
+        createdAt: msg.createdAt || msg.scheduledAt,
+        processedAt: msg.processedAt,
+        error: msg.error,
+        apiUrl: msg.apiUrl,
+        instance: msg.instance,
+        token: msg.token,
+        retries: msg.retries || 0,
+      }));
+    } catch (error) {
+      console.error("❌ Erro ao buscar agendamentos:", error);
+      return [];
+    }
   },
+
   addScheduledMessage: async (message: {
     contactNumber: string;
     message: string;
     scheduledAt: string;
   }) => {
+    // Validar dados obrigatórios
+    if (!message.contactNumber || !message.message || !message.scheduledAt) {
+      throw new Error("Dados incompletos para agendamento");
+    }
+
+    // Validar formato do número
+    if (!/^\d{10,}$/.test(message.contactNumber.replace(/\D/g, ""))) {
+      throw new Error("Número de telefone inválido");
+    }
+
+    // Validar data de agendamento
+    const scheduledDate = new Date(message.scheduledAt);
+    if (isNaN(scheduledDate.getTime())) {
+      throw new Error("Data de agendamento inválida");
+    }
+
+    // Validar se data não é no passado
+    if (scheduledDate <= new Date()) {
+      throw new Error("Data de agendamento deve ser no futuro");
+    }
+
+    // Obter configuração da Evolution API
     const config = localAPI.getEvolutionConfig();
-    const res = await api.post("/schedules", {
-      number: message.contactNumber,
-      message: message.message,
-      scheduledAt: message.scheduledAt,
-      apiUrl: config.apiUrl,
-      instance: config.instanceName,
-      token: config.token,
-    });
-    return res.data;
+    if (!config.apiUrl || !config.instanceName || !config.token) {
+      throw new Error("Configure a Evolution API primeiro");
+    }
+
+    try {
+      // Enviar agendamento
+      const res = await api.post("/schedules", {
+        number: message.contactNumber.replace(/\D/g, ""),
+        message: message.message.trim(),
+        scheduledAt: message.scheduledAt,
+        apiUrl: cleanApiUrl(config.apiUrl),
+        instance: config.instanceName,
+        token: config.token,
+      });
+
+      return res.data;
+    } catch (error: any) {
+      console.error("❌ Erro ao agendar mensagem:", error);
+      throw new Error(
+        error.response?.data?.error ||
+          error.response?.data?.message ||
+          "Erro ao agendar mensagem"
+      );
+    }
   },
+
   cancelScheduledMessage: async (id: string) => {
-    await api.delete(`/schedules/${id}`);
+    if (!id) {
+      throw new Error("ID do agendamento é obrigatório");
+    }
+
+    try {
+      await api.delete(`/schedules/${id}`);
+    } catch (error: any) {
+      console.error("❌ Erro ao cancelar agendamento:", error);
+      throw new Error(
+        error.response?.data?.error ||
+          error.response?.data?.message ||
+          "Erro ao cancelar agendamento"
+      );
+    }
+  },
+
+  // Novo método para testar conectividade
+  testEvolutionAPI: async (config: {
+    apiUrl: string;
+    instance: string;
+    token: string;
+    number?: string;
+    message?: string;
+  }) => {
+    try {
+      const response = await api.post("/debug/test-evolution", config);
+      return response.data;
+    } catch (error: any) {
+      console.error("❌ Erro ao testar Evolution API:", error);
+      throw new Error(
+        error.response?.data?.error ||
+          error.response?.data?.message ||
+          "Erro ao testar Evolution API"
+      );
+    }
   },
 };
 

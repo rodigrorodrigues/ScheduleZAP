@@ -1,181 +1,191 @@
-import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { Calendar, Clock, User, Trash2, Send, Play } from "lucide-react";
+import { useEffect, useState } from "react";
 import { scheduledAPI, ScheduledMessage } from "../services/api";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import { Trash2, AlertCircle, CheckCircle, Clock, XCircle } from "lucide-react";
 import toast from "react-hot-toast";
 
 export default function ScheduledMessages() {
   const [messages, setMessages] = useState<ScheduledMessage[]>([]);
-  const [filter, setFilter] = useState<
-    "all" | "pending" | "sent" | "cancelled"
-  >("all");
-  const [isProcessing, setIsProcessing] = useState(false);
-
-  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     loadMessages();
   }, []);
 
   const loadMessages = async () => {
-    const messagesList = await scheduledAPI.getScheduledMessages();
-    setMessages(messagesList);
-  };
-
-  const handleCancelMessage = async (messageId: string) => {
-    if (window.confirm("Tem certeza que deseja cancelar este agendamento?")) {
-      await scheduledAPI.cancelScheduledMessage(messageId);
-      await loadMessages();
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await scheduledAPI.getScheduledMessages();
+      setMessages(data);
+    } catch (error: any) {
+      console.error("❌ Erro ao carregar agendamentos:", error);
+      setError(error.message || "Erro ao carregar agendamentos");
+      toast.error("Erro ao carregar agendamentos");
+    } finally {
+      setLoading(false);
     }
   };
 
-  const filteredMessages = messages.filter((message) => {
-    if (filter === "all") return true;
-    return message.status === filter;
-  });
-
-  // Função para formatar data no fuso de São Paulo
-  const formatDateInSP = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleString("pt-BR", {
-      timeZone: "America/Sao_Paulo",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  };
-
-  // Função para formatar apenas a data no fuso de São Paulo
-  const formatDateOnlyInSP = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("pt-BR", {
-      timeZone: "America/Sao_Paulo",
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "pending":
-        return "status-pending";
-      case "sent":
-        return "status-sent";
-      case "cancelled":
-        return "status-cancelled";
-      default:
-        return "status-pending";
+  const handleCancelMessage = async (id: string) => {
+    if (!confirm("Tem certeza que deseja cancelar este agendamento?")) {
+      return;
     }
-  };
 
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case "pending":
-        return "Pendente";
-      case "sent":
-        return "Enviada";
-      case "cancelled":
-        return "Cancelada";
-      default:
-        return "Desconhecido";
+    try {
+      await scheduledAPI.cancelScheduledMessage(id);
+      toast.success("Agendamento cancelado!");
+      loadMessages();
+    } catch (error: any) {
+      console.error("❌ Erro ao cancelar agendamento:", error);
+      toast.error(error.message || "Erro ao cancelar agendamento");
     }
   };
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case "pending":
-        return <Clock className="h-4 w-4" />;
       case "sent":
-        return <Send className="h-4 w-4" />;
+        return <CheckCircle className="h-5 w-5 text-green-500" />;
+      case "pending":
+        return <Clock className="h-5 w-5 text-yellow-500" />;
       case "cancelled":
-        return <Trash2 className="h-4 w-4" />;
+        return <XCircle className="h-5 w-5 text-red-500" />;
+      case "failed":
+        return <AlertCircle className="h-5 w-5 text-red-500" />;
       default:
-        return <Calendar className="h-4 w-4" />;
+        return null;
     }
   };
 
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case "sent":
+        return "Enviada";
+      case "pending":
+        return "Aguardando";
+      case "cancelled":
+        return "Cancelada";
+      case "failed":
+        return "Falha";
+      default:
+        return status;
+    }
+  };
+
+  const formatDate = (date: string) => {
+    return format(new Date(date), "dd/MM/yyyy HH:mm", { locale: ptBR });
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-red-600">
+        <AlertCircle className="h-8 w-8 mb-2" />
+        <p>{error}</p>
+        <button
+          onClick={loadMessages}
+          className="mt-4 px-4 py-2 bg-gray-200 rounded hover:bg-gray-300"
+        >
+          Tentar novamente
+        </button>
+      </div>
+    );
+  }
+
+  if (messages.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-gray-500">
+        <Clock className="h-8 w-8 mb-2" />
+        <p>Nenhuma mensagem agendada</p>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">
-            Mensagens Agendadas
-          </h1>
-          <p className="text-gray-600">
-            Gerencie seus agendamentos de mensagens
-          </p>
-        </div>
-        <div className="flex gap-2 mt-4 sm:mt-0">
-          {/* Remover handleProcessMessages e botão relacionado */}
-          <button onClick={() => navigate("/schedule")} className="btn-primary">
-            Novo Agendamento
-          </button>
-        </div>
-      </div>
-
-      {/* Filtros */}
-      <div className="card">
-        <div className="flex flex-wrap gap-2">
-          {[
-            { value: "all", label: "Todas" },
-            { value: "pending", label: "Pendentes" },
-            { value: "sent", label: "Enviadas" },
-            { value: "cancelled", label: "Canceladas" },
-          ].map((filterOption) => (
-            <button
-              key={filterOption.value}
-              onClick={() => setFilter(filterOption.value as any)}
-              className={
-                filter === filterOption.value
-                  ? "px-3 py-1 rounded-full text-sm font-medium transition-colors bg-green-100 text-green-700"
-                  : "px-3 py-1 rounded-full text-sm font-medium transition-colors bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }
-            >
-              {filterOption.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Lista de Mensagens */}
+    <div className="p-4">
+      <h2 className="text-2xl font-bold mb-4">Mensagens Agendadas</h2>
       <div className="grid gap-4">
-        {filteredMessages.map((message) => (
+        {messages.map((message) => (
           <div
             key={message.id}
-            className="bg-white p-6 rounded-lg shadow-md flex items-center justify-between"
+            className="bg-white rounded-lg shadow p-4 flex flex-col gap-2"
           >
-            <div className="flex items-center">
-              <div className="flex-shrink-0 mr-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
                 {getStatusIcon(message.status)}
+                <span
+                  className={`font-medium ${
+                    message.status === "sent"
+                      ? "text-green-600"
+                      : message.status === "pending"
+                      ? "text-yellow-600"
+                      : "text-red-600"
+                  }`}
+                >
+                  {getStatusText(message.status)}
+                </span>
               </div>
-              <div>
-                <p className="text-lg font-semibold text-gray-900">
-                  {message.message}
-                </p>
-                <p className="text-sm text-gray-600">
-                  Data: {formatDateInSP(message.scheduledAt)}
-                </p>
-                <p className="text-sm text-gray-600">
-                  Status:{" "}
-                  <span className={`${getStatusColor(message.status)}`}>
-                    {getStatusText(message.status)}
-                  </span>
-                </p>
-              </div>
+              {message.status === "pending" && (
+                <button
+                  onClick={() => handleCancelMessage(message.id)}
+                  className="text-red-600 hover:text-red-800"
+                  title="Cancelar agendamento"
+                >
+                  <Trash2 className="h-5 w-5" />
+                </button>
+              )}
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleCancelMessage(message.id)}
-                className="text-red-600 hover:text-red-900"
-              >
-                <Trash2 className="h-5 w-5" />
-              </button>
+
+            <div className="grid gap-1 text-sm">
+              <div className="flex justify-between text-gray-600">
+                <span>Contato:</span>
+                <span className="font-medium">{message.contact.number}</span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Agendado para:</span>
+                <span className="font-medium">
+                  {formatDate(message.scheduledAt)}
+                </span>
+              </div>
+              <div className="flex justify-between text-gray-600">
+                <span>Criado em:</span>
+                <span className="font-medium">
+                  {formatDate(message.createdAt)}
+                </span>
+              </div>
+              {message.processedAt && (
+                <div className="flex justify-between text-gray-600">
+                  <span>Processado em:</span>
+                  <span className="font-medium">
+                    {formatDate(message.processedAt)}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-2 p-2 bg-gray-50 rounded text-gray-700">
+              {message.message}
+            </div>
+
+            {message.error && (
+              <div className="mt-2 p-2 bg-red-50 text-red-700 rounded text-sm">
+                <div className="font-medium">Erro:</div>
+                {message.error}
+              </div>
+            )}
+
+            <div className="mt-2 text-xs text-gray-500">
+              <div>API: {message.apiUrl}</div>
+              <div>Instância: {message.instance}</div>
             </div>
           </div>
         ))}

@@ -4,10 +4,13 @@
     "number": "5519994466218",
     "message": "Teste de agendamento",
     "scheduledAt": "2025-07-25T04:10:00.000Z",
-    "apiUrl": "http://localhost:8080",
+    "apiUrl": "http://89.116.171.102:8080",
     "instance": "teste",
     "token": "teste123",
     "status": "failed",
-    "createdAt": "2025-07-25T04:17:17.451Z"
+    "createdAt": "2025-07-25T04:17:17.451Z",
+    "processedAt": null,
+    "error": null,
+    "retries": 0
   }
 ]
