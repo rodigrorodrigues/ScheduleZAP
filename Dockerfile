@@ -28,6 +28,7 @@ RUN apk add --no-cache dumb-init
 # Copiar arquivos do build
 COPY --from=build-backend /app/backend .
 COPY --from=build-backend /app/frontend-dist ./public
+COPY docker-entrypoint.js ./docker-entrypoint.js
 
 # Criar arquivo de agendamentos vazio se não existir
 RUN touch schedules.json
