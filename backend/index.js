@@ -31,9 +31,15 @@ app.get("/api/schedules", (req, res) => {
 
 // Criar agendamento
 app.post("/api/schedules", (req, res) => {
+  console.log("[POST /api/schedules] Recebido corpo:", req.body);
   const { number, message, scheduledAt, apiUrl, instance, token } = req.body;
-  if (!number || !message || !scheduledAt || !apiUrl || !instance || !token)
+  if (!number || !message || !scheduledAt || !apiUrl || !instance || !token) {
+    console.error(
+      "[POST /api/schedules] Dados obrigatórios faltando:",
+      req.body
+    );
     return res.status(400).json({ error: "Dados obrigatórios" });
+  }
   const schedules = loadSchedules();
   const newSchedule = {
     id: Date.now().toString(),
@@ -48,6 +54,7 @@ app.post("/api/schedules", (req, res) => {
   };
   schedules.push(newSchedule);
   saveSchedules(schedules);
+  console.log("[POST /api/schedules] Novo agendamento salvo:", newSchedule);
   res.status(201).json(newSchedule);
 });
 
