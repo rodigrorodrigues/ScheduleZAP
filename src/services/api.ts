@@ -79,23 +79,26 @@ const clearCorruptedConfig = () => {
   localStorage.removeItem("evolution_token");
 };
 
-// Função para limpar URLs malformadas
-const cleanApiUrl = (url: string): string => {
-  if (!url) return "";
+// Função para limpar e formatar a URL da API
+function cleanApiUrl(url: string): string {
+  // Remove espaços no início e fim
+  let cleanUrl = url.trim();
 
-  // Remove espaços e quebras de linha
-  let cleaned = url.trim();
-
-  // Garante que termina com / se não tiver
-  if (!cleaned.endsWith("/")) {
-    cleaned += "/";
+  // Garante que a URL começa com http:// ou https://
+  if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) {
+    cleanUrl = "https://" + cleanUrl;
   }
 
-  // Remove barras duplas (exceto http:// ou https://)
-  cleaned = cleaned.replace(/([^:])\/+/g, "$1/");
+  // Remove barras duplas extras (exceto após http: ou https:)
+  cleanUrl = cleanUrl.replace(/([^:])\/+/g, "$1/");
 
-  return cleaned;
-};
+  // Garante que a URL termina com uma única barra
+  if (!cleanUrl.endsWith("/")) {
+    cleanUrl += "/";
+  }
+
+  return cleanUrl;
+}
 
 // Função para criar headers de autenticação - usando apenas apikey que funciona
 const createAuthHeaders = (token: string) => {
@@ -220,31 +223,28 @@ async function testEvolutionConnection(
   console.log("🔍 Testando conectividade com Evolution API:");
   console.log(`   URL: ${apiUrl}`);
   console.log(`   Instância: ${instance}`);
-
   try {
     // Teste 1: Verificar se a URL base responde
     console.log("👉 Teste 1: Verificando URL base...");
     const baseResponse = await axios.get(apiUrl, {
       timeout: 10000,
-      validateStatus: null, // Aceitar qualquer status para melhor diagnóstico
+      validateStatus: null,
     });
     console.log(`   Status: ${baseResponse.status}`);
     console.log(`   Resposta:`, baseResponse.data);
-
     if (baseResponse.status !== 200) {
       throw new Error(`URL base retornou status ${baseResponse.status}`);
     }
 
     // Teste 2: Verificar autenticação
     console.log("👉 Teste 2: Verificando autenticação...");
-    const authResponse = await axios.get(`${apiUrl}/instance/fetchInstances`, {
+    const authResponse = await axios.get(`${apiUrl}instance/fetchInstances`, {
       headers: { apikey: token },
       timeout: 10000,
       validateStatus: null,
     });
     console.log(`   Status: ${authResponse.status}`);
     console.log(`   Resposta:`, authResponse.data);
-
     if (authResponse.status === 401) {
       throw new Error("Token de autenticação inválido");
     }
@@ -255,7 +255,7 @@ async function testEvolutionConnection(
     // Teste 3: Verificar instância específica
     console.log("👉 Teste 3: Verificando instância...");
     const instanceResponse = await axios.get(
-      `${apiUrl}/instance/info/${instance}`,
+      `${apiUrl}instance/info/${instance}`,
       {
         headers: { apikey: token },
         timeout: 10000,
@@ -264,7 +264,6 @@ async function testEvolutionConnection(
     );
     console.log(`   Status: ${instanceResponse.status}`);
     console.log(`   Resposta:`, instanceResponse.data);
-
     if (instanceResponse.status === 404) {
       throw new Error(`Instância '${instance}' não encontrada`);
     }
@@ -288,8 +287,6 @@ async function testEvolutionConnection(
       data: error.response?.data,
       code: error.code,
     });
-
-    // Erros específicos
     if (error.code === "ECONNREFUSED") {
       throw new Error("Não foi possível conectar à API (conexão recusada)");
     }
@@ -305,7 +302,6 @@ async function testEvolutionConnection(
     if (error.response?.status === 404) {
       throw new Error("Endpoint não encontrado - verifique a URL da API");
     }
-
     throw new Error(error.message || "Erro desconhecido ao testar conexão");
   }
 }
