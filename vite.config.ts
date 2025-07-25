@@ -7,5 +7,12 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    proxy: {
+      "/api": {
+        target: "http://backend:8999", // nome do serviço backend no docker-compose
+        changeOrigin: true,
+        secure: false,
+      },
+    },
   },
 });

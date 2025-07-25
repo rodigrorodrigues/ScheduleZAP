@@ -1,10 +1,10 @@
 services:
-  schedulezap:
+  backend:
     build: .
-    container_name: schedulezap
+    container_name: schedulezap-backend
+    command: ["node", "docker-entrypoint.js"]
     restart: unless-stopped
     ports:
-      - "8988:8988" # Frontend port
       - "8999:8999" # Backend API port
     volumes:
       - ./backend/schedules.json:/app/schedules.json # Persist schedules.json
@@ -17,9 +17,22 @@ services:
           "CMD",
           "node",
           "-e",
-          "require('http').get('http://localhost:8988', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))",
+          "require('http').get('http://localhost:8999/api/schedules', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))",
         ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  frontend:
+    build: .
+    container_name: schedulezap-frontend
+    command: ["npx", "vite", "preview", "--host", "0.0.0.0", "--port", "8988"]
+    restart: unless-stopped
+    ports:
+      - "8988:8988" # Frontend port
+    depends_on:
+      - backend
+    environment:
+      - NODE_ENV=production
+      - VITE_PASSWORD=${VITE_PASSWORD:-S3nha!2024@zap}
