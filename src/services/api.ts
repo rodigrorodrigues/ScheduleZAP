@@ -176,7 +176,7 @@ export const evolutionAPI = {
 // Serviços de mensagens agendadas via backend
 export const scheduledAPI = {
   getScheduledMessages: async (): Promise<ScheduledMessage[]> => {
-    const res = await api.get("/api/schedules");
+    const res = await api.get("/schedules");
     const data = Array.isArray(res.data) ? res.data : [];
     return data.map((msg: any) => ({
       id: msg.id,
@@ -193,7 +193,7 @@ export const scheduledAPI = {
     scheduledAt: string;
   }) => {
     const config = localAPI.getEvolutionConfig();
-    const res = await api.post("/api/schedules", {
+    const res = await api.post("/schedules", {
       number: message.contactNumber,
       message: message.message,
       scheduledAt: message.scheduledAt,
@@ -204,7 +204,7 @@ export const scheduledAPI = {
     return res.data;
   },
   cancelScheduledMessage: async (id: string) => {
-    await api.delete(`/api/schedules/${id}`);
+    await api.delete(`/schedules/${id}`);
   },
 };
 
