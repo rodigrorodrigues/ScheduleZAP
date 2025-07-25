@@ -4,7 +4,7 @@ services:
       context: .
       target: backend
     container_name: schedulezap-backend
-    command: ["node", "docker-entrypoint.js"]
+    command: ["node", "index.js"]
     restart: unless-stopped
     ports:
       - "8999:8999" # Backend API port

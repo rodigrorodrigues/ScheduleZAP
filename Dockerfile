@@ -16,7 +16,6 @@ WORKDIR /app
 COPY backend ./backend
 WORKDIR /app/backend
 RUN npm ci --only=production
-COPY docker-entrypoint.js /app/backend/docker-entrypoint.js
 RUN touch /app/backend/schedules.json
 
 # --- Imagem final do backend ---
@@ -26,7 +25,8 @@ RUN apk add --no-cache dumb-init
 COPY --from=backend-build /app/backend .
 USER root
 EXPOSE 8999
-ENTRYPOINT ["ls", "-l", "/app"]
+ENTRYPOINT ["dumb-init", "--"]
+CMD ["node", "index.js"]
 
 # --- Imagem final do frontend ---
 FROM node:18-alpine AS frontend
@@ -35,4 +35,4 @@ COPY --from=frontend-build /app/dist ./dist
 RUN npm install -g serve
 USER root
 EXPOSE 8988
-CMD ["ls", "-l", "/app"] 
+CMD ["serve", "-s", "dist", "-l", "8988"] 

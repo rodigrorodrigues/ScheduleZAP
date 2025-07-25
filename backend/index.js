@@ -8,12 +8,19 @@ app.use(express.json());
 app.use(cors());
 
 const SCHEDULE_FILE = "./schedules.json";
-const PORT = 8080;
+const PORT = process.env.PORT || 8999;
 
 // Utilitários de armazenamento
 function loadSchedules() {
-  if (!fs.existsSync(SCHEDULE_FILE)) return [];
-  return JSON.parse(fs.readFileSync(SCHEDULE_FILE));
+  try {
+    if (!fs.existsSync(SCHEDULE_FILE)) return [];
+    const content = fs.readFileSync(SCHEDULE_FILE, "utf8");
+    if (!content.trim()) return [];
+    return JSON.parse(content);
+  } catch (error) {
+    console.error("Erro ao carregar schedules.json:", error);
+    return [];
+  }
 }
 function saveSchedules(schedules) {
   fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(schedules, null, 2));
@@ -130,5 +137,10 @@ setInterval(async () => {
 }, 60000);
 
 app.listen(PORT, () => {
-  console.log(`Backend rodando em http://localhost:${PORT}/`);
+  console.log(`🚀 Backend rodando em http://localhost:${PORT}/`);
+  console.log(`📋 Endpoints disponíveis:`);
+  console.log(`   GET  /api/schedules - Listar agendamentos`);
+  console.log(`   POST /api/schedules - Criar agendamento`);
+  console.log(`   DELETE /api/schedules/:id - Cancelar agendamento`);
+  console.log(`⏰ Processador de mensagens iniciado (verifica a cada 60s)`);
 });
