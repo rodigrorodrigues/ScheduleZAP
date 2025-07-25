@@ -146,6 +146,85 @@ app.get("/api/debug/schedules-status", (req, res) => {
   });
 });
 
+// Debug: Testar conectividade com Evolution API
+app.post("/api/debug/test-evolution", async (req, res) => {
+  const { apiUrl, instance, token, number, message } = req.body;
+
+  if (!apiUrl || !instance || !token) {
+    return res.status(400).json({
+      error: "apiUrl, instance e token são obrigatórios",
+    });
+  }
+
+  console.log("🧪 Testando conectividade com Evolution API:");
+  console.log(`   🌐 API URL: ${apiUrl}`);
+  console.log(`   🔧 Instância: ${instance}`);
+  console.log(`   📞 Número: ${number || "Não fornecido"}`);
+  console.log(`   💬 Mensagem: ${message || "Teste de conectividade"}`);
+
+  try {
+    // Teste 1: Verificar se a API está respondendo
+    console.log("🔍 Teste 1: Verificando se a API está respondendo...");
+    const infoResponse = await axios.get(`${apiUrl}`, { timeout: 5000 });
+    console.log("✅ API está respondendo:", infoResponse.data);
+
+    // Teste 2: Verificar instância
+    console.log("🔍 Teste 2: Verificando instância...");
+    const instanceResponse = await axios.get(
+      `${apiUrl}/instance/info/${instance}`,
+      {
+        headers: { apikey: token },
+        timeout: 5000,
+      }
+    );
+    console.log("✅ Instância encontrada:", instanceResponse.data);
+
+    // Teste 3: Enviar mensagem de teste
+    if (number && message) {
+      console.log("🔍 Teste 3: Enviando mensagem de teste...");
+      const testResult = await sendMessage(
+        number,
+        message,
+        apiUrl,
+        instance,
+        token
+      );
+
+      res.json({
+        success: true,
+        message: "Teste concluído com sucesso",
+        apiInfo: infoResponse.data,
+        instanceInfo: instanceResponse.data,
+        messageSent: testResult,
+      });
+    } else {
+      res.json({
+        success: true,
+        message: "Conectividade OK - API e instância funcionando",
+        apiInfo: infoResponse.data,
+        instanceInfo: instanceResponse.data,
+        messageSent: false,
+      });
+    }
+  } catch (error) {
+    console.error(
+      "❌ Erro no teste de conectividade:",
+      error.response?.data || error.message
+    );
+
+    res.status(500).json({
+      success: false,
+      error: "Falha na conectividade",
+      details: {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        message: error.response?.data?.message || error.message,
+        url: error.config?.url,
+      },
+    });
+  }
+});
+
 // Função para enviar mensagem via Evolution API
 async function sendMessage(number, message, apiUrl, instance, token) {
   console.log("📤 Enviando para Evolution API:");
@@ -160,42 +239,84 @@ async function sendMessage(number, message, apiUrl, instance, token) {
     return false;
   }
 
-  try {
-    const url = `${apiUrl}/message/sendText/${instance}`;
-    const payload = { number, text: message, delay: 1000 };
-    const headers = { apikey: token, "Content-Type": "application/json" };
+  // Testar diferentes formatos de payload e headers
+  const testConfigs = [
+    {
+      name: "Formato 1 - sendText com apikey",
+      url: `${apiUrl}/message/sendText/${instance}`,
+      payload: { number, text: message, delay: 1000 },
+      headers: { apikey: token, "Content-Type": "application/json" },
+    },
+    {
+      name: "Formato 2 - sendText com Authorization Bearer",
+      url: `${apiUrl}/message/sendText/${instance}`,
+      payload: { number, text: message, delay: 1000 },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+    },
+    {
+      name: "Formato 3 - sendText com x-api-key",
+      url: `${apiUrl}/message/sendText/${instance}`,
+      payload: { number, text: message, delay: 1000 },
+      headers: { "x-api-key": token, "Content-Type": "application/json" },
+    },
+    {
+      name: "Formato 4 - sendMessage (endpoint alternativo)",
+      url: `${apiUrl}/message/sendMessage/${instance}`,
+      payload: { number, text: message, delay: 1000 },
+      headers: { apikey: token, "Content-Type": "application/json" },
+    },
+    {
+      name: "Formato 5 - sendText sem delay",
+      url: `${apiUrl}/message/sendText/${instance}`,
+      payload: { number, text: message },
+      headers: { apikey: token, "Content-Type": "application/json" },
+    },
+  ];
 
-    console.log(`🌐 Fazendo requisição para: ${url}`);
-    console.log(`📦 Payload:`, payload);
-    console.log(`🔑 Headers:`, { ...headers, apikey: "***" });
+  for (const config of testConfigs) {
+    try {
+      console.log(`🔄 Testando: ${config.name}`);
+      console.log(`   URL: ${config.url}`);
+      console.log(`   Payload:`, config.payload);
+      console.log(`   Headers:`, {
+        ...config.headers,
+        apikey: "***",
+        Authorization: "***",
+        "x-api-key": "***",
+      });
 
-    const response = await axios.post(url, payload, { headers });
+      const response = await axios.post(config.url, config.payload, {
+        headers: config.headers,
+        timeout: 10000, // 10 segundos de timeout
+      });
 
-    console.log(`✅ Resposta da Evolution API:`, {
-      status: response.status,
-      statusText: response.statusText,
-      data: response.data,
-    });
+      console.log(`✅ Sucesso com ${config.name}:`, {
+        status: response.status,
+        statusText: response.statusText,
+        data: response.data,
+      });
 
-    return true;
-  } catch (err) {
-    console.error("❌ Erro ao enviar mensagem:");
-    console.error(`   Status: ${err.response?.status || "N/A"}`);
-    console.error(`   Status Text: ${err.response?.statusText || "N/A"}`);
-    console.error(`   Data:`, err.response?.data || err.message);
-    console.error(`   URL: ${err.config?.url || "N/A"}`);
-    console.error(`   Method: ${err.config?.method || "N/A"}`);
+      return true;
+    } catch (err) {
+      console.log(`❌ Falha com ${config.name}:`, {
+        status: err.response?.status || "N/A",
+        statusText: err.response?.statusText || "N/A",
+        message: err.response?.data?.message || err.message,
+      });
 
-    if (err.response?.status === 401) {
-      console.error("🔐 Erro 401: Token inválido ou não autorizado");
-    } else if (err.response?.status === 404) {
-      console.error("🔍 Erro 404: Instância não encontrada");
-    } else if (err.response?.status === 400) {
-      console.error("📝 Erro 400: Dados inválidos na requisição");
+      // Se for erro de autenticação, não testar mais
+      if (err.response?.status === 401) {
+        console.error("🔐 Erro 401: Token inválido - parando testes");
+        break;
+      }
     }
-
-    return false;
   }
+
+  console.error("❌ Todos os formatos falharam");
+  return false;
 }
 
 // Processador de agendamentos (roda a cada minuto)
@@ -280,5 +401,6 @@ app.listen(PORT, () => {
   console.log(`   DELETE /api/schedules/:id - Cancelar agendamento`);
   console.log(`   POST /api/debug/process-schedules - Forçar processamento`);
   console.log(`   GET  /api/debug/schedules-status - Status dos agendamentos`);
+  console.log(`   POST /api/debug/test-evolution - Testar Evolution API`);
   console.log(`⏰ Processador de mensagens iniciado (verifica a cada 60s)`);
 });
