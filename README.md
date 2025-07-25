@@ -1,128 +1,144 @@
 # ScheduleZAP
 
-Agendador de mensagens WhatsApp via Evolution API.
+Sistema de agendamento de mensagens WhatsApp via Evolution API.
 
-## Como usar
+## 🚀 Deploy Rápido
 
-### Instalação local
-
-1. Clone o projeto e entre na pasta:
+### 1. Clone o repositório
 
 ```bash
-git clone <url-do-repositorio>
+git clone <seu-repositorio>
 cd ScheduleZAP
 ```
 
-2. Instale as dependências:
+### 2. Configure a senha (opcional)
 
-```bash
-npm install
-cd backend && npm install && cd ..
+Crie um arquivo `.env` na raiz do projeto:
+
+```
+VITE_PASSWORD=SuaSenhaAqui
 ```
 
-3. Inicie o projeto:
-
-```bash
-npm run dev
-```
-
-Acesse http://localhost:3000
-
-### Com Docker
+### 3. Execute com Docker
 
 ```bash
 docker-compose up -d
 ```
 
-Acesse http://localhost:8988
+### 4. Acesse o sistema
 
-## Configuração
+- **Frontend**: http://localhost:8988
+- **Backend API**: http://localhost:8999/api/schedules
 
-### Evolution API
+## 📋 Funcionalidades
 
-1. Vá em **Configurações**
+- ✅ Login simples com senha
+- ✅ Configuração da Evolution API
+- ✅ Agendamento de mensagens
+- ✅ Listagem e cancelamento de agendamentos
+- ✅ Processamento automático 24/7
+- ✅ Interface responsiva
+
+## 🔧 Configuração da Evolution API
+
+1. Acesse **Configuração** no menu
 2. Preencha:
-   - URL da API (ex: https://evo.seusite.dev.br)
-   - Nome da instância
-   - Token de autenticação
-3. Clique em **Conectar Instância**
-4. Teste o envio de mensagem
+   - **URL da API**: `http://sua-evolution-api:8080/`
+   - **Nome da Instância**: `sua-instancia`
+   - **Token**: `seu-token-de-autenticacao`
+3. Clique em **Testar Conexão**
+4. Se necessário, crie uma nova instância
 
-### Senha de acesso
+## 📱 Como Usar
 
-A senha padrão é `S3nha!2024@zap`.
+1. **Login**: Digite a senha configurada
+2. **Agendar**: Vá em "Agendar Mensagem"
+3. **Preencher**:
+   - Número do contato (com código do país)
+   - Mensagem
+   - Data e hora de envio
+4. **Confirmar**: Clique em "Agendar"
 
-Para trocar, crie um arquivo `.env` na raiz:
+## 🐳 Docker
 
+### Portas
+
+- **Frontend**: 8988
+- **Backend**: 8999
+
+### Volumes
+
+- `./backend/schedules.json` - Persistência dos agendamentos
+
+### Comandos
+
+```bash
+# Iniciar
+docker-compose up -d
+
+# Ver logs
+docker-compose logs -f
+
+# Parar
+docker-compose down
+
+# Rebuild
+docker-compose up -d --build
 ```
-VITE_PASSWORD=sua-nova-senha
+
+## 🔍 Troubleshooting
+
+### Backend não responde
+
+```bash
+# Verificar se está rodando
+docker-compose ps
+
+# Ver logs do backend
+docker-compose logs backend
+
+# Testar API diretamente
+curl http://localhost:8999/api/schedules
 ```
 
-## Funcionalidades
+### Frontend não carrega
 
-- Login simples (só senha)
-- Agendar mensagens para qualquer data/hora
-- Ver todos os agendamentos
-- Cancelar agendamentos pendentes
-- Backend roda 24h (envia mensagens mesmo com navegador fechado)
+```bash
+# Ver logs do frontend
+docker-compose logs frontend
 
-## Deploy no EasyPanel
-
-### Configuração
-
-- Tipo: Docker Compose
-- Porta principal: 8988
-- Porta secundária: 8999
-
-### Variáveis de ambiente
-
-Configure no EasyPanel:
-
-```
-VITE_PASSWORD=sua-senha
-NODE_ENV=production
+# Verificar se o backend está acessível
+curl http://localhost:8999/api/schedules
 ```
 
-### Problemas comuns
+### Evolution API não conecta
 
-**Container não inicia:**
+1. Verifique se a URL está correta
+2. Confirme se o token é válido
+3. Teste a conexão da Evolution API separadamente
+4. Verifique se a instância existe e está conectada
 
-- Verifique se as portas 8988 e 8999 estão livres
-- Confirme se o docker-compose.yml está na raiz
-
-**Frontend não carrega:**
-
-- Acesse http://seu-dominio:8988
-- Verifique se o container está rodando
-
-**Backend não responde:**
-
-- Teste http://seu-dominio:8999/api/schedules
-- Verifique a configuração da Evolution API
-
-**Mensagens não enviam:**
-
-- Teste a conexão nas configurações
-- Confirme se a instância está conectada
-
-### Logs importantes
-
-O container mostra logs detalhados:
-
-- "Iniciando ScheduleZAP..." - Sistema iniciando
-- "Frontend rodando..." - Frontend pronto
-- "API backend rodando..." - Backend pronto
-- "Processando agendamentos..." - Processamento automático
-- "Enviando para Evolution API..." - Tentativa de envio
-
-## Estrutura
+## 📊 Estrutura
 
 ```
 ScheduleZAP/
-├── src/                    # Frontend
-├── backend/               # Backend
-├── docker-entrypoint.js   # Servidor unificado
-├── Dockerfile            # Container
-├── docker-compose.yml    # Orquestração
+├── src/                    # Frontend React
+├── backend/               # Backend Node.js
+├── docker-compose.yml     # Orquestração Docker
+├── Dockerfile            # Build multi-stage
 └── README.md            # Este arquivo
 ```
+
+## 🔐 Segurança
+
+- Senha configurável via variável de ambiente
+- Tokens da Evolution API armazenados localmente
+- Agendamentos persistidos em arquivo JSON
+
+## 📞 Suporte
+
+Para problemas ou dúvidas, verifique:
+
+1. Logs do Docker: `docker-compose logs`
+2. Console do navegador (F12)
+3. Configuração da Evolution API
