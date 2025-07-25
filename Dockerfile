@@ -24,16 +24,15 @@ FROM node:18-alpine AS backend
 WORKDIR /app
 RUN apk add --no-cache dumb-init
 COPY --from=backend-build /app/backend .
-USER nobody
+USER root
 EXPOSE 8999
-ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "docker-entrypoint.js"]
+ENTRYPOINT ["ls", "-l", "/app"]
 
 # --- Imagem final do frontend ---
 FROM node:18-alpine AS frontend
 WORKDIR /app
 COPY --from=frontend-build /app/dist ./dist
 RUN npm install -g serve
-USER nobody
+USER root
 EXPOSE 8988
-CMD ["serve", "-s", "dist", "-l", "8988"] 
+CMD ["ls", "-l", "/app"] 

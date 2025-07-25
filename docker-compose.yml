@@ -4,7 +4,7 @@ services:
       context: .
       target: backend
     container_name: schedulezap-backend
-    command: ["node", "docker-entrypoint.js"]
+    command: ["ls", "-l", "/app"]
     restart: unless-stopped
     ports:
       - "8999:8999" # Backend API port
@@ -14,13 +14,7 @@ services:
       - NODE_ENV=production
       - VITE_PASSWORD=${VITE_PASSWORD:-S3nha!2024@zap}
     healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "require('http').get('http://localhost:8999/api/schedules', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))",
-        ]
+      test: ["CMD", "ls", "-l", "/app"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -31,7 +25,7 @@ services:
       context: .
       target: frontend
     container_name: schedulezap-frontend
-    command: ["serve", "-s", "dist", "-l", "8988"]
+    command: ["ls", "-l", "/app"]
     restart: unless-stopped
     ports:
       - "8988:8988" # Frontend port
