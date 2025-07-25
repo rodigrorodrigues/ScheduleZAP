@@ -177,14 +177,10 @@ export const evolutionAPI = {
 export const scheduledAPI = {
   getScheduledMessages: async (): Promise<ScheduledMessage[]> => {
     const res = await api.get("/api/schedules");
-    // Adaptar para o formato esperado pelo frontend
-    return (res.data || []).map((msg: any) => ({
+    const data = Array.isArray(res.data) ? res.data : [];
+    return data.map((msg: any) => ({
       id: msg.id,
-      contact: {
-        id: msg.number,
-        name: msg.number,
-        number: msg.number,
-      },
+      contact: { id: msg.number, name: msg.number, number: msg.number },
       message: msg.message,
       scheduledAt: msg.scheduledAt,
       status: msg.status,

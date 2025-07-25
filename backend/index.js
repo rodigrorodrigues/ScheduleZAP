@@ -21,7 +21,12 @@ function saveSchedules(schedules) {
 
 // Listar agendamentos
 app.get("/api/schedules", (req, res) => {
-  res.json(loadSchedules());
+  try {
+    const schedules = loadSchedules();
+    res.json(Array.isArray(schedules) ? schedules : []);
+  } catch (error) {
+    res.json([]);
+  }
 });
 
 // Criar agendamento
