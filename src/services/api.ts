@@ -185,8 +185,13 @@ export const evolutionAPI = {
     ),
 };
 
-interface EvolutionTestResult {
+// Interfaces para teste de conectividade
+export interface EvolutionTestBase {
   success: boolean;
+}
+
+export interface EvolutionTestResult extends EvolutionTestBase {
+  success: true;
   baseUrl: boolean;
   auth: boolean;
   instance: boolean;
@@ -194,7 +199,7 @@ interface EvolutionTestResult {
   messageSent?: boolean;
 }
 
-interface EvolutionTestError {
+export interface EvolutionTestError extends EvolutionTestBase {
   success: false;
   error: string;
   details: {
@@ -204,12 +209,14 @@ interface EvolutionTestError {
   };
 }
 
+export type EvolutionTestResponse = EvolutionTestResult | EvolutionTestError;
+
 // Função para testar conectividade com Evolution API
 async function testEvolutionConnection(
   apiUrl: string,
   instance: string,
   token: string
-): Promise<EvolutionTestResult> {
+): Promise<EvolutionTestResponse> {
   console.log("🔍 Testando conectividade com Evolution API:");
   console.log(`   URL: ${apiUrl}`);
   console.log(`   Instância: ${instance}`);
@@ -407,7 +414,7 @@ export const scheduledAPI = {
     token: string;
     number?: string;
     message?: string;
-  }): Promise<EvolutionTestResult | EvolutionTestError> => {
+  }): Promise<EvolutionTestResponse> => {
     try {
       // Limpar URL
       const cleanedUrl = cleanApiUrl(config.apiUrl);

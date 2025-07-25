@@ -6,8 +6,6 @@ import {
   WifiOff,
   CheckCircle,
   AlertCircle,
-  QrCode,
-  RefreshCw,
   Key,
   Plus,
   List,
@@ -21,9 +19,18 @@ import {
   EvolutionConfig,
   InstanceInfo,
   scheduledAPI,
+  EvolutionTestResponse,
+  EvolutionTestError,
 } from "../services/api";
 import toast from "react-hot-toast";
 import axios from "axios";
+
+// Type guard para verificar se é um erro
+function isEvolutionError(
+  result: EvolutionTestResponse
+): result is EvolutionTestError {
+  return !result.success;
+}
 
 interface SettingsFormData {
   apiUrl: string;
@@ -332,12 +339,12 @@ export default function Settings() {
         message: "Teste de conexão do ScheduleZAP",
       });
 
-      if (testResult.success) {
-        toast.success("Conexão testada com sucesso!");
-        setConnectionStatus("connected");
-      } else {
-        throw new Error(testResult.error || "Falha no teste de conexão");
+      if (isEvolutionError(testResult)) {
+        throw new Error(testResult.error);
       }
+
+      toast.success("Conexão testada com sucesso!");
+      setConnectionStatus("connected");
     } catch (error: any) {
       console.error("❌ Erro ao testar conexão:", error);
       toast.error(error.message || "Falha no teste de conexão");
@@ -770,10 +777,7 @@ export default function Settings() {
             {isTesting ? (
               <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-600"></div>
             ) : (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Testar Conexão
-              </>
+              <>Testar Conexão</>
             )}
           </button>
         </div>
