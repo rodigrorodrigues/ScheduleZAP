@@ -1,11 +1,27 @@
 version: "3.8"
+
 services:
   schedulezap:
     build: .
     container_name: schedulezap
-    ports:
-      - "8988:8988"
-      - "8999:8999"
-    volumes:
-      - ./backend/schedules.json:/app/schedules.json
     restart: unless-stopped
+    ports:
+      - "8988:8988" # Frontend port
+      - "8999:8999" # Backend API port
+    volumes:
+      - ./backend/schedules.json:/app/schedules.json # Persist schedules.json
+    environment:
+      - NODE_ENV=production
+      - VITE_PASSWORD=${VITE_PASSWORD:-S3nha!2024@zap}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:8988', (res) => { process.exit(res.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

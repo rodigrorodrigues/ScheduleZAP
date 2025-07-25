@@ -9,126 +9,232 @@ const FRONTEND_PORT = 8988;
 const BACKEND_PORT = 8999;
 const SCHEDULE_FILE = "./schedules.json";
 
+console.log("🚀 Iniciando ScheduleZAP...");
+console.log(`📁 Diretório atual: ${process.cwd()}`);
+console.log(`📁 Conteúdo do diretório:`, fs.readdirSync("."));
+
+// Verificar se o diretório public existe
+const publicDir = path.resolve("./public");
+console.log(`📁 Diretório public: ${publicDir}`);
+console.log(
+  `📁 Conteúdo do public:`,
+  fs.existsSync(publicDir) ? fs.readdirSync(publicDir) : "NÃO EXISTE"
+);
+
 // --- Backend API ---
 const backend = express();
 backend.use(express.json());
 backend.use(cors());
 
+console.log("🔧 Configurando backend...");
+
+// Funções para gerenciar agendamentos
 function loadSchedules() {
-  if (!fs.existsSync(SCHEDULE_FILE)) return [];
-  return JSON.parse(fs.readFileSync(SCHEDULE_FILE));
+  try {
+    if (fs.existsSync(SCHEDULE_FILE)) {
+      const data = fs.readFileSync(SCHEDULE_FILE, "utf8");
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error("❌ Erro ao carregar agendamentos:", error);
+  }
+  return [];
 }
+
 function saveSchedules(schedules) {
-  fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(schedules, null, 2));
+  try {
+    fs.writeFileSync(SCHEDULE_FILE, JSON.stringify(schedules, null, 2));
+    console.log("💾 Agendamentos salvos com sucesso");
+  } catch (error) {
+    console.error("❌ Erro ao salvar agendamentos:", error);
+  }
 }
 
+// API: Listar agendamentos
 backend.get("/api/schedules", (req, res) => {
-  res.json(loadSchedules());
+  console.log("📋 GET /api/schedules - Listando agendamentos");
+  try {
+    const schedules = loadSchedules();
+    res.json(schedules);
+  } catch (error) {
+    console.error("❌ Erro ao listar agendamentos:", error);
+    res.status(500).json({ error: "Erro interno" });
+  }
 });
 
+// API: Criar agendamento
 backend.post("/api/schedules", (req, res) => {
-  const { number, message, scheduledAt, apiUrl, instance, token } = req.body;
-  if (!number || !message || !scheduledAt || !apiUrl || !instance || !token)
-    return res.status(400).json({ error: "Dados obrigatórios" });
-  const schedules = loadSchedules();
-  const newSchedule = {
-    id: Date.now().toString(),
-    number,
-    message,
-    scheduledAt,
-    apiUrl,
-    instance,
-    token,
-    status: "pending",
-    createdAt: new Date().toISOString(),
-  };
-  schedules.push(newSchedule);
-  saveSchedules(schedules);
-  res.status(201).json(newSchedule);
+  console.log("➕ POST /api/schedules - Criando agendamento:", req.body);
+  try {
+    const { number, message, scheduledAt, apiUrl, instance, token } = req.body;
+
+    if (!number || !message || !scheduledAt || !apiUrl || !instance || !token) {
+      console.error("❌ Dados obrigatórios faltando:", {
+        number,
+        message,
+        scheduledAt,
+        apiUrl,
+        instance,
+        token,
+      });
+      return res.status(400).json({ error: "Dados obrigatórios" });
+    }
+
+    const schedules = loadSchedules();
+    const newSchedule = {
+      id: Date.now().toString(),
+      number,
+      message,
+      scheduledAt,
+      apiUrl,
+      instance,
+      token,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    };
+
+    schedules.push(newSchedule);
+    saveSchedules(schedules);
+    console.log("✅ Agendamento criado:", newSchedule.id);
+    res.status(201).json(newSchedule);
+  } catch (error) {
+    console.error("❌ Erro ao criar agendamento:", error);
+    res.status(500).json({ error: "Erro interno" });
+  }
 });
 
+// API: Cancelar agendamento
 backend.delete("/api/schedules/:id", (req, res) => {
-  let schedules = loadSchedules();
-  schedules = schedules.map((s) =>
-    s.id === req.params.id ? { ...s, status: "cancelled" } : s
+  console.log(
+    "❌ DELETE /api/schedules/" + req.params.id + " - Cancelando agendamento"
   );
-  saveSchedules(schedules);
-  res.status(204).end();
+  try {
+    const schedules = loadSchedules();
+    const index = schedules.findIndex((s) => s.id === req.params.id);
+
+    if (index === -1) {
+      return res.status(404).json({ error: "Agendamento não encontrado" });
+    }
+
+    schedules[index].status = "cancelled";
+    saveSchedules(schedules);
+    console.log("✅ Agendamento cancelado:", req.params.id);
+    res.json({ message: "Agendamento cancelado" });
+  } catch (error) {
+    console.error("❌ Erro ao cancelar agendamento:", error);
+    res.status(500).json({ error: "Erro interno" });
+  }
 });
 
+// Função para enviar mensagem via Evolution API
 async function sendMessage(number, message, apiUrl, instance, token) {
-  console.log("Enviando para Evolution API:", {
+  console.log("📤 Enviando para Evolution API:", {
     apiUrl,
     instance,
     token,
     number,
     message,
   });
+
   if (!apiUrl || !instance || !token) {
-    console.error("Agendamento inválido: faltam dados de configuração.");
+    console.error("❌ Agendamento inválido: faltam dados de configuração.");
     return false;
   }
+
   try {
-    await axios.post(
+    const response = await axios.post(
       `${apiUrl}/message/sendText/${instance}`,
       { number, text: message, delay: 1000 },
-      { headers: { apikey: token, "Content-Type": "application/json" } }
+      {
+        headers: {
+          apikey: token,
+          "Content-Type": "application/json",
+        },
+        timeout: 10000, // 10 segundos de timeout
+      }
     );
+    console.log("✅ Mensagem enviada com sucesso:", response.status);
     return true;
   } catch (err) {
     console.error(
-      "Erro ao enviar mensagem:",
+      "❌ Erro ao enviar mensagem:",
+      err.response?.status,
       err.response?.data || err.message
     );
     return false;
   }
 }
 
+// Processador de agendamentos (roda a cada minuto)
+console.log("⏰ Iniciando processador de agendamentos...");
 setInterval(async () => {
-  const schedules = loadSchedules();
-  const now = new Date();
-  let changed = false;
-  for (const sched of schedules) {
-    if (
-      sched.status === "pending" &&
-      new Date(sched.scheduledAt) <= now &&
-      sched.apiUrl &&
-      sched.instance &&
-      sched.token
-    ) {
-      const sent = await sendMessage(
-        sched.number,
-        sched.message,
-        sched.apiUrl,
-        sched.instance,
-        sched.token
-      );
-      sched.status = sent ? "sent" : "failed";
-      changed = true;
-    } else if (
-      sched.status === "pending" &&
-      (!sched.apiUrl || !sched.instance || !sched.token)
-    ) {
-      console.error("Agendamento ignorado por falta de configuração:", sched);
+  try {
+    const schedules = loadSchedules();
+    const now = new Date();
+    let changed = false;
+
+    console.log(`🔄 Processando ${schedules.length} agendamentos...`);
+
+    for (const sched of schedules) {
+      if (sched.status === "pending" && new Date(sched.scheduledAt) <= now) {
+        console.log(
+          `⏰ Processando agendamento ${sched.id} para ${sched.number}`
+        );
+
+        if (sched.apiUrl && sched.instance && sched.token) {
+          const sent = await sendMessage(
+            sched.number,
+            sched.message,
+            sched.apiUrl,
+            sched.instance,
+            sched.token
+          );
+          sched.status = sent ? "sent" : "failed";
+          changed = true;
+          console.log(`✅ Agendamento ${sched.id} processado: ${sched.status}`);
+        } else {
+          console.error(
+            "❌ Agendamento ignorado por falta de configuração:",
+            sched.id
+          );
+        }
+      }
     }
+
+    if (changed) {
+      saveSchedules(schedules);
+      console.log("💾 Agendamentos atualizados");
+    }
+  } catch (error) {
+    console.error("❌ Erro no processador de agendamentos:", error);
   }
-  if (changed) saveSchedules(schedules);
 }, 60000);
 
 backend.listen(BACKEND_PORT, () => {
   console.log(
-    `API backend rodando em http://localhost:${BACKEND_PORT}/api/schedules`
+    `🚀 API backend rodando em http://localhost:${BACKEND_PORT}/api/schedules`
   );
 });
 
 // --- Frontend ---
 const frontend = express();
-const publicDir = path.resolve("./public");
-frontend.use(serveStatic(publicDir));
-// SPA fallback para frontend
-frontend.get("*", (req, res) => {
-  res.sendFile(path.join(publicDir, "index.html"));
-});
-frontend.listen(FRONTEND_PORT, () => {
-  console.log(`Frontend rodando em http://localhost:${FRONTEND_PORT}/`);
-});
+
+if (fs.existsSync(publicDir)) {
+  console.log("🌐 Configurando frontend...");
+  frontend.use(serveStatic(publicDir));
+
+  // SPA fallback para frontend
+  frontend.get("*", (req, res) => {
+    res.sendFile(path.join(publicDir, "index.html"));
+  });
+
+  frontend.listen(FRONTEND_PORT, () => {
+    console.log(`🌐 Frontend rodando em http://localhost:${FRONTEND_PORT}/`);
+    console.log("✅ ScheduleZAP iniciado com sucesso!");
+  });
+} else {
+  console.error("❌ ERRO: Diretório public não encontrado!");
+  console.error("📁 Diretório atual:", process.cwd());
+  console.error("📁 Arquivos disponíveis:", fs.readdirSync("."));
+  process.exit(1);
+}
