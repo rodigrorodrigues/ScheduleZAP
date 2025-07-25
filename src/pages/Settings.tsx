@@ -79,8 +79,10 @@ export default function Settings() {
   // Validar nome da instância
   const validateInstanceName = (name: string) => {
     if (!name) return "Nome da instância é obrigatório";
-    if (!/^[a-zA-Z0-9-_]+$/.test(name))
-      return "Nome deve conter apenas letras, números, - e _";
+    if (!/^[a-zA-Z0-9\s-_]+$/.test(name))
+      return "Nome deve conter apenas letras, números, espaços, - e _";
+    if (name.trim() !== name)
+      return "Nome não pode começar ou terminar com espaços";
     return true;
   };
 
@@ -545,7 +547,7 @@ export default function Settings() {
                     required: "Nome da instância é obrigatório",
                   })}
                   className="input-field flex-1"
-                  placeholder="minha-instancia"
+                  placeholder="Ex: Minha Instância"
                 />
                 <button
                   type="button"

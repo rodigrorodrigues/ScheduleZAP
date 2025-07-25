@@ -76,6 +76,24 @@ app.post("/api/schedules", (req, res) => {
     return res.status(400).json({ error: "URL da API inválida" });
   }
 
+  // Validar nome da instância
+  const trimmedInstance = instance.trim();
+  if (!trimmedInstance) {
+    return res.status(400).json({ error: "Nome da instância é obrigatório" });
+  }
+  if (!/^[a-zA-Z0-9\s-_]+$/.test(trimmedInstance)) {
+    return res
+      .status(400)
+      .json({ error: "Nome da instância contém caracteres inválidos" });
+  }
+  if (trimmedInstance !== instance) {
+    return res
+      .status(400)
+      .json({
+        error: "Nome da instância não pode começar ou terminar com espaços",
+      });
+  }
+
   // Criar agendamento
   const schedules = loadSchedules();
   const newSchedule = {
