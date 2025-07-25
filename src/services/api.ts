@@ -1,7 +1,7 @@
 import axios from "axios";
 
 const API_BASE_URL =
-  (import.meta as any).env?.VITE_API_URL || "http://localhost:8080";
+  (import.meta as any).env?.VITE_API_URL || "http://localhost:8999";
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -61,6 +61,31 @@ export interface InstanceInfo {
   token?: string;
 }
 
+// Função para limpar configurações corrompidas
+const clearCorruptedConfig = () => {
+  console.log("🧹 Limpando configurações corrompidas...");
+  localStorage.removeItem("evolution_config");
+  localStorage.removeItem("evolution_token");
+};
+
+// Função para limpar URLs malformadas
+const cleanApiUrl = (url: string): string => {
+  if (!url) return "";
+
+  // Remove espaços e quebras de linha
+  let cleaned = url.trim();
+
+  // Garante que termina com / se não tiver
+  if (!cleaned.endsWith("/")) {
+    cleaned += "/";
+  }
+
+  // Remove barras duplas (exceto http:// ou https://)
+  cleaned = cleaned.replace(/([^:])\/+/g, "$1/");
+
+  return cleaned;
+};
+
 // Função para criar headers de autenticação - usando apenas apikey que funciona
 const createAuthHeaders = (token: string) => {
   return {
@@ -72,24 +97,24 @@ const createAuthHeaders = (token: string) => {
 // Serviços da Evolution API v2 (conforme documentação oficial)
 export const evolutionAPI = {
   // Obter informações da API
-  getInfo: (apiUrl: string) => axios.get(`${apiUrl}/`),
+  getInfo: (apiUrl: string) => axios.get(`${cleanApiUrl(apiUrl)}`),
 
   // Obter informações da instância - usando o ID da instância
   getInstanceInfo: (apiUrl: string, instanceId: string, token: string) =>
-    axios.get(`${apiUrl}/instance/info/${instanceId}`, {
+    axios.get(`${cleanApiUrl(apiUrl)}instance/info/${instanceId}`, {
       headers: createAuthHeaders(token),
     }),
 
   // Obter todas as instâncias
   getAllInstances: (apiUrl: string, token: string) =>
-    axios.get(`${apiUrl}/instance/fetchInstances`, {
+    axios.get(`${cleanApiUrl(apiUrl)}instance/fetchInstances`, {
       headers: createAuthHeaders(token),
     }),
 
   // Criar nova instância
   createInstance: (apiUrl: string, instanceName: string, token: string) =>
     axios.post(
-      `${apiUrl}/instance/create/${instanceName}`,
+      `${cleanApiUrl(apiUrl)}instance/create/${instanceName}`,
       {},
       {
         headers: createAuthHeaders(token),
@@ -99,7 +124,7 @@ export const evolutionAPI = {
   // Conectar instância
   connectInstance: (apiUrl: string, instanceName: string, token: string) =>
     axios.post(
-      `${apiUrl}/instance/connect/${instanceName}`,
+      `${cleanApiUrl(apiUrl)}instance/connect/${instanceName}`,
       {},
       {
         headers: createAuthHeaders(token),
@@ -108,136 +133,41 @@ export const evolutionAPI = {
 
   // Desconectar instância
   disconnectInstance: (apiUrl: string, instanceName: string, token: string) =>
-    axios.delete(`${apiUrl}/instance/logout/${instanceName}`, {
+    axios.delete(`${cleanApiUrl(apiUrl)}instance/logout/${instanceName}`, {
       headers: createAuthHeaders(token),
     }),
 
-  // Deletar instância
-  deleteInstance: (apiUrl: string, instanceName: string, token: string) =>
-    axios.delete(`${apiUrl}/instance/delete/${instanceName}`, {
+  // Obter QR Code
+  getQRCode: (apiUrl: string, instanceName: string, token: string) =>
+    axios.get(`${cleanApiUrl(apiUrl)}instance/connect/${instanceName}`, {
       headers: createAuthHeaders(token),
     }),
-
-  // Obter contatos (usando findChats)
-  getContacts: (apiUrl: string, instanceName: string, token: string) =>
-    axios.post(
-      `${apiUrl}/chat/findChats/${instanceName}`,
-      {},
-      { headers: createAuthHeaders(token) }
-    ),
 
   // Enviar mensagem de texto
   sendTextMessage: (
     apiUrl: string,
     instanceName: string,
-    token: string,
-    data: {
-      number: string;
-      text: string;
-      delay?: number;
-      linkPreview?: boolean;
-      mentionsEveryOne?: boolean;
-    }
-  ) => {
-    // Formatar o número do telefone corretamente
-    const formattedNumber = data.number.replace(/\D/g, ""); // Remove caracteres não numéricos
-
-    const requestData = {
-      number: formattedNumber,
-      text: data.text,
-      delay: data.delay ?? 0,
-      linkPreview: data.linkPreview ?? false,
-      mentionsEveryOne: data.mentionsEveryOne ?? false,
-    };
-
-    console.log("Dados da requisição:", requestData);
-
-    return axios.post(
-      `${apiUrl}/message/sendText/${instanceName}`,
-      requestData,
+    number: string,
+    message: string,
+    token: string
+  ) =>
+    axios.post(
+      `${cleanApiUrl(apiUrl)}message/sendText/${instanceName}`,
+      {
+        number,
+        text: message,
+        delay: 1000,
+      },
       {
         headers: createAuthHeaders(token),
       }
-    );
-  },
+    ),
 
-  // Enviar mensagem de imagem
-  sendImageMessage: (
-    apiUrl: string,
-    instanceName: string,
-    token: string,
-    data: {
-      number: string;
-      image: string;
-      caption?: string;
-    }
-  ) =>
-    axios.post(`${apiUrl}/chat/sendImage/${instanceName}`, data, {
-      headers: createAuthHeaders(token),
-    }),
-
-  // Enviar mensagem de documento
-  sendDocumentMessage: (
-    apiUrl: string,
-    instanceName: string,
-    token: string,
-    data: {
-      number: string;
-      document: string;
-      caption?: string;
-    }
-  ) =>
-    axios.post(`${apiUrl}/chat/sendDocument/${instanceName}`, data, {
-      headers: createAuthHeaders(token),
-    }),
-
-  // Verificar status da instância
-  getInstanceStatus: (apiUrl: string, instanceName: string, token: string) =>
-    axios.get(`${apiUrl}/instance/info/${instanceName}`, {
-      headers: createAuthHeaders(token),
-    }),
-
-  // Obter QR Code para conexão
-  getQRCode: (apiUrl: string, instanceName: string, token: string) =>
+  // Obter contatos
+  getContacts: (apiUrl: string, instanceName: string, token: string) =>
     axios.post(
-      `${apiUrl}/instance/connect/${instanceName}`,
+      `${cleanApiUrl(apiUrl)}chat/findChats/${instanceName}`,
       {},
-      {
-        headers: createAuthHeaders(token),
-      }
-    ),
-
-  // Obter webhook
-  getWebhook: (apiUrl: string, instanceName: string, token: string) =>
-    axios.get(`${apiUrl}/webhook/find/${instanceName}`, {
-      headers: createAuthHeaders(token),
-    }),
-
-  // Configurar webhook
-  setWebhook: (
-    apiUrl: string,
-    instanceName: string,
-    token: string,
-    webhookUrl: string
-  ) =>
-    axios.post(
-      `${apiUrl}/webhook/set/${instanceName}`,
-      { url: webhookUrl },
-      {
-        headers: createAuthHeaders(token),
-      }
-    ),
-
-  // Marcar mensagem como lida
-  markMessageAsRead: (
-    apiUrl: string,
-    instanceName: string,
-    token: string,
-    messageId: string
-  ) =>
-    axios.post(
-      `${apiUrl}/chat/markMessageAsRead/${instanceName}`,
-      { messageId },
       {
         headers: createAuthHeaders(token),
       }
@@ -290,15 +220,35 @@ let messageProcessorInterval: ReturnType<typeof setInterval> | null = null;
 export const localAPI = {
   // Configuração da Evolution API
   getEvolutionConfig: (): EvolutionConfig => {
-    const config = localStorage.getItem("evolution_config");
-    return config
-      ? JSON.parse(config)
-      : {
+    try {
+      const config = localStorage.getItem("evolution_config");
+      if (!config) {
+        return {
           apiUrl: "",
           instanceName: "",
           token: "",
           isConnected: false,
         };
+      }
+
+      const parsedConfig = JSON.parse(config);
+
+      // Limpar URL malformada se existir
+      if (parsedConfig.apiUrl) {
+        parsedConfig.apiUrl = cleanApiUrl(parsedConfig.apiUrl);
+      }
+
+      return parsedConfig;
+    } catch (error) {
+      console.error("Erro ao carregar configuração:", error);
+      clearCorruptedConfig();
+      return {
+        apiUrl: "",
+        instanceName: "",
+        token: "",
+        isConnected: false,
+      };
+    }
   },
 
   setEvolutionConfig: (config: EvolutionConfig) => {
@@ -489,14 +439,9 @@ export const localAPI = {
       const response = await evolutionAPI.sendTextMessage(
         config.apiUrl,
         config.instanceName,
-        config.token,
-        {
-          number: phoneNumber,
-          text: message,
-          delay: 1000, // 1 segundo de delay em ms
-          linkPreview: false,
-          mentionsEveryOne: false,
-        }
+        phoneNumber,
+        message,
+        config.token
       );
 
       console.log("Resposta do envio:", response.data);
@@ -690,5 +635,25 @@ export const localAPI = {
     }
   },
 };
+
+// Verificação automática de configurações corrompidas
+const checkAndFixConfig = () => {
+  try {
+    const config = localStorage.getItem("evolution_config");
+    if (config) {
+      const parsed = JSON.parse(config);
+      if (parsed.apiUrl && parsed.apiUrl.includes("//")) {
+        console.log("🔧 Detectada URL malformada, limpando configurações...");
+        clearCorruptedConfig();
+      }
+    }
+  } catch (error) {
+    console.log("🔧 Configuração corrompida detectada, limpando...");
+    clearCorruptedConfig();
+  }
+};
+
+// Executar verificação ao carregar o módulo
+checkAndFixConfig();
 
 export default api;

@@ -13,6 +13,8 @@ import {
   List,
   TestTube,
   Bug,
+  Send,
+  Trash2,
 } from "lucide-react";
 import { localAPI, EvolutionConfig, InstanceInfo } from "../services/api";
 import toast from "react-hot-toast";
@@ -434,7 +436,7 @@ export default function Settings() {
                     },
                   })}
                   className="input-field flex-1"
-                  placeholder="http://localhost:8080"
+                  placeholder="http://localhost:8999"
                 />
                 <button
                   type="button"
@@ -561,6 +563,19 @@ export default function Settings() {
                 className="btn-secondary w-full"
               >
                 📤 Testar Envio de Mensagem
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem("evolution_config");
+                  localStorage.removeItem("evolution_token");
+                  window.location.reload();
+                }}
+                className="btn-secondary w-full mt-2"
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Limpar Configurações
               </button>
             </div>
           </div>
