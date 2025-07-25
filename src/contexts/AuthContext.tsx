@@ -35,10 +35,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Trocar login para aceitar apenas senha
+  const PASSWORD = (import.meta as any).env.VITE_PASSWORD || "S3nha!2024@zap";
+
   const login = async (password: string) => {
-    // Exemplo: senha fixa '123456' para demo
-    if (password === "123456") {
+    if (password === PASSWORD) {
       const userData = { id: "1", name: "Usuário" };
       localStorage.setItem("user", JSON.stringify(userData));
       setIsAuthenticated(true);
