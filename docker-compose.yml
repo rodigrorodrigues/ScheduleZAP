@@ -1,0 +1,11 @@
+version: "3.8"
+services:
+  schedulezap:
+    build: .
+    container_name: schedulezap
+    ports:
+      - "8988:8988"
+      - "8999:8999"
+    volumes:
+      - ./backend/schedules.json:/app/schedules.json
+    restart: unless-stopped
