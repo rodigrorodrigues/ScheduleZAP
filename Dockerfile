@@ -8,7 +8,7 @@ COPY postcss.config.js ./
 COPY tailwind.config.js ./
 COPY ./src ./src
 COPY ./index.html ./
-RUN npm ci --only=production && npm run build
+RUN npm ci && npm run build
 
 # Etapa 2: Instalação do backend
 FROM node:18-alpine AS build-backend
