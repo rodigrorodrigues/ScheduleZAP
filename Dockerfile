@@ -42,8 +42,8 @@ RUN mkdir -p /app/backend && \
     chown -R appuser:appgroup /app
 
 # Instalar apenas dependências de produção
-RUN npm ci --only=production && \
-    cd backend && npm ci --only=production
+RUN npm install --omit=dev && \
+    cd backend && npm install --omit=dev
 
 # Mudar para usuário não-root
 USER appuser
