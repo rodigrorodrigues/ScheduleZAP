@@ -331,7 +331,7 @@ async function sendMessage(
 
     // Enviar a mensagem
     const response = await axios.post(
-      `${apiUrl}message/sendText/${encodeURIComponent(instance)}`,
+      `${cleanApiUrl(apiUrl)}message/sendText/${encodeURIComponent(instance)}`,
       {
         number: number.replace(/\D/g, ""), // Remove não-dígitos
         text: message,
@@ -355,11 +355,12 @@ async function sendMessage(
   }
 }
 
-// Serviços de mensagens agendadas via backend
+// Função para buscar agendamentos
 export const scheduledAPI = {
   getScheduledMessages: async (): Promise<ScheduledMessage[]> => {
     try {
-      const res = await api.get("/schedules");
+      const res = await api.get("/api/schedules");
+      console.log("📋 Agendamentos recebidos:", res.data);
       const data = Array.isArray(res.data) ? res.data : [];
       return data.map((msg: any) => ({
         id: msg.id,
@@ -375,7 +376,7 @@ export const scheduledAPI = {
         token: msg.token,
         retries: msg.retries || 0,
       }));
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Erro ao buscar agendamentos:", error);
       return [];
     }
@@ -386,36 +387,13 @@ export const scheduledAPI = {
     message: string;
     scheduledAt: string;
   }) => {
-    // Validar dados obrigatórios
-    if (!message.contactNumber || !message.message || !message.scheduledAt) {
-      throw new Error("Dados incompletos para agendamento");
-    }
-
-    // Validar formato do número
-    if (!/^\d{10,}$/.test(message.contactNumber.replace(/\D/g, ""))) {
-      throw new Error("Número de telefone inválido");
-    }
-
-    // Validar data de agendamento
-    const scheduledDate = new Date(message.scheduledAt);
-    if (isNaN(scheduledDate.getTime())) {
-      throw new Error("Data de agendamento inválida");
-    }
-
-    // Validar se data não é no passado
-    if (scheduledDate <= new Date()) {
-      throw new Error("Data de agendamento deve ser no futuro");
-    }
-
-    // Obter configuração da Evolution API
-    const config = localAPI.getEvolutionConfig();
-    if (!config.apiUrl || !config.instanceName || !config.token) {
-      throw new Error("Configure a Evolution API primeiro");
-    }
-
     try {
-      // Enviar agendamento
-      const res = await api.post("/schedules", {
+      const config = localAPI.getEvolutionConfig();
+      if (!config.apiUrl || !config.instanceName || !config.token) {
+        throw new Error("Configure a Evolution API primeiro");
+      }
+
+      const res = await api.post("/api/schedules", {
         number: message.contactNumber.replace(/\D/g, ""),
         message: message.message.trim(),
         scheduledAt: message.scheduledAt,
@@ -424,6 +402,7 @@ export const scheduledAPI = {
         token: config.token,
       });
 
+      console.log("✅ Mensagem agendada:", res.data);
       return res.data;
     } catch (error: any) {
       console.error("❌ Erro ao agendar mensagem:", error);
@@ -439,9 +418,8 @@ export const scheduledAPI = {
     if (!id) {
       throw new Error("ID do agendamento é obrigatório");
     }
-
     try {
-      await api.delete(`/schedules/${id}`);
+      await api.delete(`/api/schedules/${id}`);
     } catch (error: any) {
       console.error("❌ Erro ao cancelar agendamento:", error);
       throw new Error(
@@ -452,7 +430,6 @@ export const scheduledAPI = {
     }
   },
 
-  // Novo método para testar conectividade
   testEvolutionAPI: async (config: {
     apiUrl: string;
     instance: string;
@@ -461,26 +438,20 @@ export const scheduledAPI = {
     message?: string;
   }): Promise<EvolutionTestResponse> => {
     try {
-      // Limpar URL
       const cleanedUrl = cleanApiUrl(config.apiUrl);
-
-      // Testar conectividade básica
       const testResult = await testEvolutionConnection(
         cleanedUrl,
         config.instance,
         config.token
       );
 
-      // Se pediu para testar mensagem
       if (testResult.success && config.number && config.message) {
         console.log("👉 Teste 4: Simulando envio de mensagem...");
         const messageResponse = await axios.post(
-          `${cleanedUrl}/message/sendText/${config.instance}`,
-          {
-            number: config.number,
-            text: config.message,
-            delay: 1000,
-          },
+          `${cleanedUrl}message/sendText/${encodeURIComponent(
+            config.instance
+          )}`,
+          { number: config.number, text: config.message, delay: 1000 },
           {
             headers: { apikey: config.token },
             timeout: 10000,
@@ -489,13 +460,11 @@ export const scheduledAPI = {
         );
         console.log(`   Status: ${messageResponse.status}`);
         console.log(`   Resposta:`, messageResponse.data);
-
         if (messageResponse.status !== 200 && messageResponse.status !== 201) {
           throw new Error(
             `Erro ao simular envio: status ${messageResponse.status}`
           );
         }
-
         testResult.messageSent = true;
       }
 
@@ -507,7 +476,6 @@ export const scheduledAPI = {
         data: error.response?.data,
         code: error.code,
       });
-
       return {
         success: false,
         error: error.message,
