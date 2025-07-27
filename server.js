@@ -72,6 +72,7 @@ app.get("/api/schedules", (req, res) => {
     const schedules = loadSchedules();
     res.json(schedules);
   } catch (error) {
+    console.error("❌ Erro ao listar agendamentos:", error);
     res.status(500).json({ error: "Erro ao listar agendamentos" });
   }
 });
@@ -102,8 +103,10 @@ app.post("/api/schedules", (req, res) => {
 
     schedules.push(newSchedule);
     saveSchedules(schedules);
+    console.log("✅ Novo agendamento criado:", newSchedule.id);
     res.status(201).json(newSchedule);
   } catch (error) {
+    console.error("❌ Erro ao criar agendamento:", error);
     res.status(500).json({ error: "Erro ao criar agendamento" });
   }
 });
@@ -119,8 +122,10 @@ app.delete("/api/schedules/:id", (req, res) => {
 
     schedules[index].status = "cancelled";
     saveSchedules(schedules);
+    console.log("✅ Agendamento cancelado:", req.params.id);
     res.json({ message: "Agendamento cancelado" });
   } catch (error) {
+    console.error("❌ Erro ao cancelar agendamento:", error);
     res.status(500).json({ error: "Erro ao cancelar agendamento" });
   }
 });
@@ -142,11 +147,15 @@ async function processSchedules() {
     const now = new Date();
     let changed = false;
 
+    console.log(`🔄 Processando ${schedules.length} agendamentos...`);
+
     for (const schedule of schedules) {
       if (
         schedule.status === "pending" &&
         new Date(schedule.scheduledAt) <= now
       ) {
+        console.log(`📤 Enviando mensagem: ${schedule.id}`);
+
         try {
           const response = await fetch(
             `${schedule.apiUrl}/message/sendText/${encodeURIComponent(
@@ -166,11 +175,21 @@ async function processSchedules() {
             }
           );
 
+          const responseText = await response.text();
+          console.log(
+            `📤 Resposta da API: ${response.status} - ${responseText}`
+          );
+
           schedule.status = response.ok ? "sent" : "failed";
           schedule.processedAt = new Date().toISOString();
-          schedule.error = response.ok ? null : `Status: ${response.status}`;
+          schedule.error = response.ok
+            ? null
+            : `Status: ${response.status} - ${responseText}`;
           changed = true;
+
+          console.log(`✅ Mensagem ${schedule.status}: ${schedule.id}`);
         } catch (error) {
+          console.error(`❌ Erro ao enviar mensagem ${schedule.id}:`, error);
           schedule.status = "failed";
           schedule.processedAt = new Date().toISOString();
           schedule.error = error.message;
@@ -182,6 +201,7 @@ async function processSchedules() {
 
     if (changed) {
       saveSchedules(schedules);
+      console.log("💾 Agendamentos atualizados");
     }
   } catch (error) {
     console.error("❌ Erro no processador:", error);
@@ -215,5 +235,7 @@ process.on("unhandledRejection", (reason) => {
 // Iniciar servidor e processador
 const server = app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  console.log(`📁 Arquivo de agendamentos: ${SCHEDULES_FILE}`);
   processorInterval = setInterval(processSchedules, 60000);
+  console.log("🔄 Processador de mensagens iniciado (intervalo: 60s)");
 });

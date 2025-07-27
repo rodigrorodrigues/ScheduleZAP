@@ -23,7 +23,7 @@ RUN npm run build
 FROM node:18-alpine
 
 # Instalar dumb-init para melhor gerenciamento de processos
-RUN apk add --no-cache dumb-init
+RUN apk add --no-cache dumb-init wget
 
 # Criar usuário não-root
 RUN addgroup -S appgroup && \
@@ -36,6 +36,7 @@ WORKDIR /app
 COPY --from=builder /build/dist ./dist
 COPY --from=builder /build/backend ./backend
 COPY --from=builder /build/server.js ./
+COPY --from=builder /build/package.json ./
 
 # Criar diretório para dados e configurar permissões
 RUN mkdir -p /app/backend && \
