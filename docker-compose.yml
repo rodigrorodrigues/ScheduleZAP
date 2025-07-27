@@ -1,23 +1,12 @@
 services:
-  frontend:
-    build: .
-    ports:
-      - "80:8988"
-    environment:
-      - NODE_ENV=production
-      - VITE_API_URL=http://backend:8999
-    restart: always
-    depends_on:
-      - backend
-
-  backend:
+  app:
     image: node:18-alpine
     working_dir: /app
     volumes:
-      - ./backend:/app
-      - ./backend/schedules.json:/app/schedules.json
-    command: npm start
+      - .:/app
+    ports:
+      - "80:8988"
+    command: node server.js
     environment:
       - NODE_ENV=production
-      - PORT=8999
     restart: always
