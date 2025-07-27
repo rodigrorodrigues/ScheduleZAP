@@ -1,12 +1,26 @@
+version: "3.8"
+
 services:
   app:
-    image: node:18-alpine
-    working_dir: /app
-    volumes:
-      - .:/app
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "80:8988"
-    command: node server.js
+    volumes:
+      - schedules:/app/backend/schedules.json
     environment:
       - NODE_ENV=production
-    restart: always
+      - APP_URL=${APP_URL:-http://localhost}
+      - API_URL=${API_URL:-http://localhost}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  schedules:
+    driver: local

@@ -1,17 +1,14 @@
-# Build stage
-FROM node:18-alpine as builder
-
-# Instalar dependências necessárias
-RUN apk add --no-cache dumb-init
+# Estágio de build
+FROM node:18-alpine AS builder
 
 # Definir diretório de trabalho
-WORKDIR /app
+WORKDIR /build
 
 # Copiar arquivos de dependências
 COPY package*.json ./
 COPY backend/package*.json ./backend/
 
-# Instalar dependências do frontend e backend
+# Instalar dependências
 RUN npm ci && \
     cd backend && \
     npm ci
@@ -22,50 +19,45 @@ COPY . .
 # Build do frontend
 RUN npm run build
 
-# Configuração de produção
+# Estágio de produção
 FROM node:18-alpine
 
-# Instalar dumb-init e outras dependências necessárias
-RUN apk add --no-cache dumb-init tzdata && \
-    cp /usr/share/zoneinfo/America/Sao_Paulo /etc/localtime && \
-    echo "America/Sao_Paulo" > /etc/timezone && \
-    apk del tzdata
+# Instalar dumb-init para melhor gerenciamento de processos
+RUN apk add --no-cache dumb-init
 
 # Criar usuário não-root
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN addgroup -S appgroup && \
+    adduser -S appuser -G appgroup
 
-# Criar diretório de trabalho
+# Criar diretório da aplicação
 WORKDIR /app
 
 # Copiar arquivos necessários do builder
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/backend/package*.json ./backend/
-COPY --from=builder /app/backend ./backend
-COPY --from=builder /app/node_modules ./node_modules
-COPY --from=builder /app/package*.json ./
+COPY --from=builder /build/dist ./dist
+COPY --from=builder /build/backend/package*.json ./
+COPY --from=builder /build/backend ./backend
+COPY --from=builder /build/server.js ./
 
-# Copiar script de entrada
-COPY docker-entrypoint.js .
-
-# Configurar permissões
-RUN chown -R appuser:appgroup /app
+# Instalar apenas dependências de produção
+RUN npm ci --only=production && \
+    chown -R appuser:appgroup /app
 
 # Mudar para usuário não-root
 USER appuser
 
-# Expor porta
-EXPOSE 8988
-
 # Configurar variáveis de ambiente
 ENV NODE_ENV=production \
-    TZ=America/Sao_Paulo
+    PORT=8988
 
-# Configurar healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD wget --spider http://localhost:8988 || exit 1
+# Criar volume para persistência
+VOLUME ["/app/backend/schedules.json"]
+
+# Verificação de saúde
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8988 || exit 1
 
 # Usar dumb-init como entrypoint
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 
 # Comando para iniciar a aplicação
-CMD ["node", "docker-entrypoint.js"] 
+CMD ["node", "server.js"] 

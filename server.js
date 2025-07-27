@@ -5,8 +5,13 @@ const cors = require("cors");
 
 // Configuração básica
 const app = express();
-const PORT = 8988;
+const PORT = process.env.PORT || 8988;
 const SCHEDULES_FILE = path.join(__dirname, "backend", "schedules.json");
+
+// Garantir que o diretório backend existe
+if (!fs.existsSync(path.dirname(SCHEDULES_FILE))) {
+  fs.mkdirSync(path.dirname(SCHEDULES_FILE), { recursive: true });
+}
 
 // Garantir que o arquivo de agendamentos existe
 if (!fs.existsSync(SCHEDULES_FILE)) {
@@ -16,6 +21,23 @@ if (!fs.existsSync(SCHEDULES_FILE)) {
 // Middleware
 app.use(express.json());
 app.use(cors());
+
+// Middleware de log
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    console.log(
+      `${req.method} ${req.url} ${res.statusCode} ${Date.now() - start}ms`
+    );
+  });
+  next();
+});
+
+// Middleware de erro
+app.use((err, req, res, next) => {
+  console.error("❌ Erro não tratado:", err);
+  res.status(500).json({ error: "Erro interno do servidor" });
+});
 
 // Funções auxiliares
 function loadSchedules() {
@@ -104,6 +126,8 @@ app.get("*", (req, res) => {
 });
 
 // Processador de mensagens agendadas
+let processorInterval;
+
 async function processSchedules() {
   try {
     const schedules = loadSchedules();
@@ -156,10 +180,32 @@ async function processSchedules() {
   }
 }
 
-// Iniciar servidor e processador
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+// Função de limpeza
+function cleanup() {
+  console.log("\n🛑 Encerrando servidor...");
+  if (processorInterval) {
+    clearInterval(processorInterval);
+  }
+  process.exit(0);
+}
 
-  // Iniciar processador de mensagens
-  setInterval(processSchedules, 60000);
+// Tratamento de sinais
+process.on("SIGTERM", cleanup);
+process.on("SIGINT", cleanup);
+
+// Tratamento de erros não capturados
+process.on("uncaughtException", (error) => {
+  console.error("❌ Erro não capturado:", error);
+  cleanup();
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("❌ Promise rejeitada não tratada:", reason);
+  cleanup();
+});
+
+// Iniciar servidor e processador
+const server = app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Servidor rodando na porta ${PORT}`);
+  processorInterval = setInterval(processSchedules, 60000);
 });
