@@ -254,68 +254,28 @@ async function testEvolutionConnection(
 
     // Verificar se a instância existe na lista retornada
     const instances = Array.isArray(authResponse.data) ? authResponse.data : [];
-    const instanceExists = instances.some(
-      (inst: any) => inst.name === instance
-    );
+    const instanceData = instances.find((inst: any) => inst.name === instance);
 
-    if (!instanceExists) {
+    if (!instanceData) {
       throw new Error(
         `Instância '${instance}' não encontrada na lista de instâncias disponíveis`
       );
     }
 
-    // Teste 3: Verificar status da instância específica usando o nome exato
-    console.log("👉 Teste 3: Verificando instância...");
-    const instanceResponse = await axios.get(
-      `${apiUrl}instance/info/${encodeURIComponent(instance)}`,
-      {
-        headers: { apikey: token },
-        timeout: 10000,
-        validateStatus: null,
-      }
-    );
-    console.log(`   Status: ${instanceResponse.status}`);
-    console.log(`   Resposta:`, instanceResponse.data);
-
-    // Se a instância não for encontrada, tentar buscar pelo ID
-    if (instanceResponse.status === 404) {
-      const instanceData = instances.find(
-        (inst: any) => inst.name === instance
-      );
-      if (instanceData?.id) {
-        const instanceByIdResponse = await axios.get(
-          `${apiUrl}instance/info/${instanceData.id}`,
-          {
-            headers: { apikey: token },
-            timeout: 10000,
-            validateStatus: null,
-          }
-        );
-        if (instanceByIdResponse.status === 200) {
-          return {
-            success: true,
-            baseUrl: true,
-            auth: true,
-            instance: true,
-            instanceInfo: instanceByIdResponse.data,
-          };
-        }
-      }
-      throw new Error(`Instância '${instance}' existe mas não responde`);
-    }
-
-    if (instanceResponse.status !== 200) {
+    // Verificar se a instância está conectada
+    if (instanceData.connectionStatus !== "open") {
       throw new Error(
-        `Erro ao verificar instância: status ${instanceResponse.status}`
+        `Instância '${instance}' está desconectada (status: ${instanceData.connectionStatus})`
       );
     }
 
+    // Em vez de tentar o endpoint info, vamos usar os dados que já temos
     return {
       success: true,
       baseUrl: true,
       auth: true,
       instance: true,
-      instanceInfo: instanceResponse.data,
+      instanceInfo: instanceData,
     };
   } catch (error: any) {
     console.error("❌ Erro no teste de conectividade:", {
@@ -343,6 +303,55 @@ async function testEvolutionConnection(
       throw new Error("Endpoint não encontrado - verifique a URL da API");
     }
     throw new Error(error.message || "Erro desconhecido ao testar conexão");
+  }
+}
+
+// Função para enviar mensagem via Evolution API
+async function sendMessage(
+  number: string,
+  message: string,
+  apiUrl: string,
+  instance: string,
+  token: string
+): Promise<boolean> {
+  console.log("📤 Enviando mensagem via Evolution API:", {
+    apiUrl,
+    instance,
+    number,
+    message: message.substring(0, 20) + "...", // Log parcial da mensagem
+  });
+
+  try {
+    // Primeiro verificar se a instância está conectada
+    const testResult = await testEvolutionConnection(apiUrl, instance, token);
+    if (!testResult.success) {
+      console.error("❌ Instância não está pronta para enviar mensagens");
+      return false;
+    }
+
+    // Enviar a mensagem
+    const response = await axios.post(
+      `${apiUrl}message/sendText/${encodeURIComponent(instance)}`,
+      {
+        number: number.replace(/\D/g, ""), // Remove não-dígitos
+        text: message,
+        delay: 1000,
+      },
+      {
+        headers: { apikey: token },
+        timeout: 10000,
+      }
+    );
+
+    console.log("✅ Mensagem enviada com sucesso:", response.status);
+    return true;
+  } catch (error: any) {
+    console.error("❌ Erro ao enviar mensagem:", {
+      status: error.response?.status,
+      data: error.response?.data,
+      message: error.message,
+    });
+    return false;
   }
 }
 
