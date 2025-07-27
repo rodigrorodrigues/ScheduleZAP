@@ -32,11 +32,10 @@ WORKDIR /app
 # Copiar arquivos necessários
 COPY --from=builder /build/dist ./dist
 COPY --from=builder /build/backend ./backend
-COPY --from=builder /build/server.js ./
 COPY --from=builder /build/package.json ./
 
-# Instalar dependências de produção
-RUN npm ci --only=production && cd backend && npm ci --only=production
+# Instalar dependências de produção do backend
+RUN cd backend && npm ci --only=production
 
 # Configurar permissões
 RUN chown -R appuser:appgroup /app
@@ -58,4 +57,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 
 # Comando
-CMD ["node", "server.js"] 
+CMD ["node", "backend/index.js"] 

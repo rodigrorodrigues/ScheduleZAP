@@ -1,55 +1,30 @@
 version: "3.8"
 
 services:
-  backend:
-    build:
-      context: .
-      target: backend
-    container_name: schedulezap-backend
-    restart: unless-stopped
+  app:
+    build: .
     ports:
-      - "8999:8999"
+      - "8988:8988"
     volumes:
-      - ./backend/schedules.json:/app/schedules.json
+      - schedules:/app/backend
     environment:
       - NODE_ENV=production
-      - VITE_PASSWORD=${VITE_PASSWORD:-S3nha!2024@zap}
-      - HOST=89.116.171.102
-    networks:
-      - schedulezap-network
+      - PORT=8988
+    restart: unless-stopped
     healthcheck:
       test:
         [
           "CMD",
           "wget",
-          "--quiet",
+          "--no-verbose",
           "--tries=1",
           "--spider",
-          "http://localhost:8999/api/schedules",
+          "http://localhost:8988/health",
         ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 40s
 
-  frontend:
-    build:
-      context: .
-      target: frontend
-    container_name: schedulezap-frontend
-    restart: unless-stopped
-    ports:
-      - "8988:8988"
-    environment:
-      - NODE_ENV=production
-      - VITE_PASSWORD=${VITE_PASSWORD:-S3nha!2024@zap}
-      - VITE_API_URL=http://89.116.171.102:8999
-      - HOST=89.116.171.102
-    networks:
-      - schedulezap-network
-    depends_on:
-      - backend
-
-networks:
-  schedulezap-network:
-    driver: bridge
+volumes:
+  schedules:

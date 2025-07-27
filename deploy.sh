@@ -1,53 +1,34 @@
 #!/bin/bash
 
-# Cores para output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+# Script de deploy para VPS
+echo "🚀 Iniciando deploy do ScheduleZAP..."
 
-# Configurações
-VPS_IP="89.116.171.102"
-PROJECT_PATH="/etc/easypanel/projects/evolution/schedulezap/code"
+# Parar containers existentes
+echo "⏹️ Parando containers existentes..."
+docker-compose -f docker-compose.prod.yml down
 
-echo -e "${YELLOW}🚀 Iniciando deploy para VPS ($VPS_IP)...${NC}"
+# Remover imagens antigas
+echo "🧹 Removendo imagens antigas..."
+docker system prune -f
 
-# Buildar o projeto localmente
-echo -e "${YELLOW}📦 Buildando o projeto...${NC}"
-npm run build
+# Fazer pull das mudanças
+echo "📥 Fazendo pull das mudanças..."
+git pull origin main
 
-# Criar arquivo de deploy com apenas os arquivos necessários
-echo -e "${YELLOW}📝 Criando arquivo de deploy...${NC}"
-tar czf deploy.tar.gz \
-    dist/ \
-    backend/ \
-    docker-compose.yml \
-    Dockerfile \
-    docker-entrypoint.js \
-    package.json \
-    package-lock.json
+# Build e start dos containers
+echo "🔨 Fazendo build dos containers..."
+docker-compose -f docker-compose.prod.yml up -d --build
 
-# Enviar para a VPS
-echo -e "${YELLOW}📤 Enviando arquivos para a VPS...${NC}"
-scp deploy.tar.gz root@$VPS_IP:$PROJECT_PATH/
+# Aguardar um pouco para o container inicializar
+echo "⏳ Aguardando inicialização..."
+sleep 10
 
-# Executar comandos remotamente
-echo -e "${YELLOW}🔧 Executando comandos na VPS...${NC}"
-ssh root@$VPS_IP "cd $PROJECT_PATH && \
-    echo '📦 Extraindo arquivos...' && \
-    tar xzf deploy.tar.gz && \
-    rm deploy.tar.gz && \
-    echo '🛑 Parando contêineres...' && \
-    docker compose down && \
-    echo '🏗️ Reconstruindo contêineres...' && \
-    docker compose up -d --build && \
-    echo '📋 Logs do contêiner:' && \
-    docker compose logs -f --tail=100"
-
-# Limpar arquivos locais
-echo -e "${YELLOW}🧹 Limpando arquivos temporários...${NC}"
-rm deploy.tar.gz
-
-echo -e "${GREEN}✅ Deploy concluído!${NC}"
-echo -e "${GREEN}🌐 A aplicação estará disponível em:${NC}"
-echo -e "${GREEN}   https://evolution-schedulezap.jqzthr.easypanel.host${NC}" 
+# Verificar se está funcionando
+echo "🔍 Verificando se está funcionando..."
+if curl -f http://localhost:8988/health > /dev/null 2>&1; then
+    echo "✅ Deploy realizado com sucesso!"
+    echo "🌐 Acesse: http://localhost:8988"
+else
+    echo "❌ Erro no deploy. Verifique os logs:"
+    docker-compose -f docker-compose.prod.yml logs
+fi 

@@ -86,7 +86,7 @@ export default function ScheduleMessage() {
       });
       toast.success("Mensagem agendada!");
       reset();
-      navigate("/scheduled-messages");
+      navigate("/");
     } catch (error) {
       toast.error("Erro ao agendar mensagem");
     }

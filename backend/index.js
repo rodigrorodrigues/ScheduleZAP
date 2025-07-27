@@ -9,12 +9,24 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-const PORT = 8999;
+const PORT = process.env.PORT || 8999;
 const SCHEDULE_FILE = join(__dirname, "schedules.json");
 
 // Middleware
 app.use(express.json());
-app.use(cors());
+app.use(
+  cors({
+    origin:
+      process.env.NODE_ENV === "production"
+        ? ["http://localhost:8988", "http://127.0.0.1:8988"]
+        : [
+            "http://localhost:8988",
+            "http://127.0.0.1:8988",
+            "http://localhost:3000",
+          ],
+    credentials: true,
+  })
+);
 
 // Garantir que o arquivo de agendamentos existe
 if (!fs.existsSync(SCHEDULE_FILE)) {
@@ -126,6 +138,11 @@ app.delete("/api/schedules/:id", (req, res) => {
   }
 });
 
+// Rota de health check
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
 // Processador de mensagens agendadas
 async function processScheduledMessages() {
   try {
@@ -202,6 +219,6 @@ async function processScheduledMessages() {
 setInterval(processScheduledMessages, 60000);
 
 // Iniciar servidor
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Backend rodando na porta ${PORT}`);
 });

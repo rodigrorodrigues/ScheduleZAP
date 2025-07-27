@@ -6,10 +6,6 @@ import ScheduledMessages from "./pages/ScheduledMessages";
 import Settings from "./pages/Settings";
 import { AuthProvider, RequireAuth } from "./contexts/AuthContext";
 import Layout from "./components/Layout";
-import { localAPI } from "./services/api";
-
-// Iniciar processador de mensagens
-localAPI.startMessageProcessor();
 
 export default function App() {
   return (

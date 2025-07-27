@@ -361,7 +361,7 @@ async function sendMessage(
 export const scheduledAPI = {
   getScheduledMessages: async (): Promise<ScheduledMessage[]> => {
     try {
-      const res = await api.get("/api/schedules");
+      const res = await api.get("/schedules");
       console.log("📋 Agendamentos recebidos:", res.data);
       const data = Array.isArray(res.data) ? res.data : [];
       return data.map((msg: any) => ({
@@ -395,7 +395,7 @@ export const scheduledAPI = {
         throw new Error("Configure a Evolution API primeiro");
       }
 
-      const res = await api.post("/api/schedules", {
+      const res = await api.post("/schedules", {
         number: message.contactNumber.replace(/\D/g, ""),
         message: message.message.trim(),
         scheduledAt: message.scheduledAt,
@@ -421,7 +421,7 @@ export const scheduledAPI = {
       throw new Error("ID do agendamento é obrigatório");
     }
     try {
-      await api.delete(`/api/schedules/${id}`);
+      await api.delete(`/schedules/${id}`);
     } catch (error: any) {
       console.error("❌ Erro ao cancelar agendamento:", error);
       throw new Error(
@@ -492,9 +492,6 @@ export const scheduledAPI = {
 };
 
 // Serviços locais (localStorage)
-let messageProcessorStarted = false;
-let messageProcessorInterval: ReturnType<typeof setInterval> | null = null;
-
 export const localAPI = {
   // Configuração da Evolution API
   getEvolutionConfig: (): EvolutionConfig => {
@@ -568,95 +565,6 @@ export const localAPI = {
     } catch (error: any) {
       console.error("❌ Erro ao salvar configuração:", error);
       throw new Error("Erro ao salvar configuração: " + error.message);
-    }
-  },
-
-  // Processador de mensagens
-  startMessageProcessor: () => {
-    if (messageProcessorStarted) {
-      console.log("⏭️ Processador já está rodando");
-      return;
-    }
-
-    console.log("🔄 Processador de mensagens agendadas iniciado");
-    messageProcessorStarted = true;
-
-    const processMessages = async () => {
-      try {
-        console.log("Processando mensagens agendadas...");
-        console.log(
-          "Horário atual (SP):",
-          new Date().toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" })
-        );
-
-        const config = localAPI.getEvolutionConfig();
-        if (
-          !config.apiUrl ||
-          !config.instanceName ||
-          !config.token ||
-          !config.isConnected
-        ) {
-          console.log(
-            "⏭️ Pulando processamento: Evolution API não configurada"
-          );
-          return;
-        }
-
-        // Buscar mensagens agendadas
-        const messages = await scheduledAPI.getScheduledMessages();
-        if (messages.length === 0) {
-          console.log("📭 Nenhuma mensagem agendada");
-          return;
-        }
-
-        console.log(`📬 ${messages.length} mensagens encontradas`);
-
-        // Processar cada mensagem
-        for (const message of messages) {
-          if (message.status === "pending") {
-            const scheduledTime = new Date(message.scheduledAt);
-            if (scheduledTime <= new Date()) {
-              console.log(`🚀 Processando mensagem ${message.id}`);
-              try {
-                await scheduledAPI.testEvolutionAPI({
-                  apiUrl: message.apiUrl,
-                  instance: message.instance,
-                  token: message.token,
-                  number: message.contact.number,
-                  message: message.message,
-                });
-                console.log(`✅ Mensagem ${message.id} enviada com sucesso`);
-              } catch (error: any) {
-                console.error(
-                  `❌ Erro ao processar mensagem ${message.id}:`,
-                  error.message
-                );
-              }
-            } else {
-              console.log(
-                `⏳ Mensagem ${
-                  message.id
-                } agendada para ${scheduledTime.toLocaleString("pt-BR")}`
-              );
-            }
-          }
-        }
-      } catch (error: any) {
-        console.error("❌ Erro no processador:", error.message);
-      }
-    };
-
-    // Iniciar processador
-    messageProcessorInterval = setInterval(processMessages, 60000); // 60 segundos
-    processMessages(); // Executar imediatamente
-  },
-
-  stopMessageProcessor: () => {
-    if (messageProcessorInterval) {
-      clearInterval(messageProcessorInterval);
-      messageProcessorInterval = null;
-      messageProcessorStarted = false;
-      console.log("⏹️ Processador de mensagens parado");
     }
   },
 
