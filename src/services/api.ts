@@ -1,13 +1,15 @@
 import axios from "axios";
 
-const API_BASE_URL = "/api";
+// Obter a URL da API do ambiente
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8999";
 
+// Criar instância do axios
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: API_URL,
   headers: {
     "Content-Type": "application/json",
   },
-  timeout: 10000, // 10 segundos de timeout
+  timeout: 10000,
 });
 
 // Interceptor para tratar erros
