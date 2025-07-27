@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    init: true
     ports:
       - "80:8988"
     volumes:
@@ -11,9 +12,14 @@ services:
       - NODE_ENV=production
       - PORT=8988
       - BACKEND_PORT=8999
-    restart: unless-stopped
+    restart: always
+    stop_grace_period: 30s
     healthcheck:
-      test: ["CMD", "wget", "--spider", "http://localhost:8988"]
+      test:
+        [
+          "CMD-SHELL",
+          "wget --no-verbose --tries=1 --spider http://localhost:8988 || exit 1",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3

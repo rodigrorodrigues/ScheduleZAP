@@ -8,69 +8,109 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Configurações
-const PORT = process.env.PORT || 8988;
-const BACKEND_PORT = process.env.BACKEND_PORT || 8999;
-const BACKEND_HOST = "localhost";
+const PORT = parseInt(process.env.PORT || "8988", 10);
+const BACKEND_PORT = parseInt(process.env.BACKEND_PORT || "8999", 10);
 
 // Log de configuração
 console.log("📝 Configuração:", {
   NODE_ENV: process.env.NODE_ENV,
   PORT,
   BACKEND_PORT,
-  BACKEND_HOST,
 });
+
+let server = null;
+let backend = null;
+let isShuttingDown = false;
+
+// Função para encerramento gracioso
+const shutdown = async (signal) => {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`\n📥 Recebido sinal ${signal}`);
+
+  // Criar uma promise para aguardar o encerramento do servidor
+  const closeServer = () =>
+    new Promise((resolve) => {
+      if (!server) {
+        resolve();
+        return;
+      }
+
+      console.log("🛑 Fechando servidor HTTP...");
+      server.close(() => {
+        console.log("✅ Servidor HTTP fechado");
+        resolve();
+      });
+    });
+
+  // Criar uma promise para aguardar o encerramento do backend
+  const closeBackend = () =>
+    new Promise((resolve) => {
+      if (!backend) {
+        resolve();
+        return;
+      }
+
+      console.log("🛑 Encerrando backend...");
+      backend.kill(signal);
+      backend.once("exit", (code, sig) => {
+        console.log(`✅ Backend encerrado (código: ${code}, sinal: ${sig})`);
+        resolve();
+      });
+    });
+
+  try {
+    // Aguardar o encerramento de ambos os processos
+    await Promise.race([
+      Promise.all([closeServer(), closeBackend()]),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout")), 25000)
+      ),
+    ]);
+    console.log("✅ Encerramento gracioso concluído");
+    process.exit(0);
+  } catch (error) {
+    console.error("⚠️ Timeout no encerramento gracioso, forçando saída");
+    process.exit(1);
+  }
+};
 
 // Configurar servidor Express para o frontend
 const app = express();
 
 // Iniciar o backend
-console.log("🚀 Iniciando backend...");
-const backend = spawn("node", ["backend/index.js"], {
-  stdio: "inherit",
-  env: {
-    ...process.env,
-    PORT: BACKEND_PORT.toString(),
-  },
-});
+const startBackend = () => {
+  console.log("🚀 Iniciando backend...");
+  backend = spawn("node", ["backend/index.js"], {
+    stdio: "inherit",
+    env: {
+      ...process.env,
+      PORT: BACKEND_PORT.toString(),
+    },
+  });
 
-// Aguardar backend iniciar
-await new Promise((resolve) => setTimeout(resolve, 2000));
+  backend.on("exit", (code, signal) => {
+    if (!isShuttingDown) {
+      console.error(
+        `❌ Backend encerrou inesperadamente (código: ${code}, sinal: ${signal})`
+      );
+      process.exit(1);
+    }
+  });
+};
 
-// Configurar headers para proxy reverso
-app.set("trust proxy", true);
-app.use((req, res, next) => {
-  // Headers CORS e segurança
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader(
-    "Access-Control-Allow-Methods",
-    "GET, POST, PUT, DELETE, OPTIONS"
-  );
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-Requested-With"
-  );
-  res.setHeader("X-Frame-Options", "SAMEORIGIN");
-  res.setHeader("X-Content-Type-Options", "nosniff");
-
-  // Responder imediatamente a requisições OPTIONS
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  next();
-});
-
-// Configurar proxy para o backend
+// Configurar proxy reverso
 app.use(
   "/api",
   createProxyMiddleware({
-    target: `http://${BACKEND_HOST}:${BACKEND_PORT}`,
+    target: `http://localhost:${BACKEND_PORT}`,
     changeOrigin: true,
     pathRewrite: {
       "^/api": "",
     },
     onError: (err, req, res) => {
-      console.error("❌ Erro no proxy:", err);
+      console.error("❌ Erro no proxy:", err.message);
       res.status(500).json({ error: "Erro ao comunicar com o backend" });
     },
   })
@@ -80,12 +120,9 @@ app.use(
 app.use(
   express.static(join(__dirname, "dist"), {
     maxAge: "1h",
-    setHeaders: (res, path) => {
+    setHeaders: (res) => {
       res.setHeader("X-Frame-Options", "SAMEORIGIN");
       res.setHeader("X-Content-Type-Options", "nosniff");
-      if (path.includes("/assets/")) {
-        res.setHeader("Cache-Control", "public, max-age=31536000");
-      }
     },
   })
 );
@@ -95,38 +132,28 @@ app.get("*", (req, res) => {
   res.sendFile(join(__dirname, "dist", "index.html"));
 });
 
-// Variável para controlar o estado do servidor
-let isShuttingDown = false;
+// Iniciar servidor e backend
+const start = async () => {
+  try {
+    // Iniciar backend primeiro
+    startBackend();
 
-// Iniciar servidor
-const server = app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Servidor rodando na porta ${PORT}`);
-});
+    // Aguardar um pouco para o backend iniciar
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
-// Configurar timeout mais longo
-server.timeout = 120000; // 2 minutos
+    // Iniciar servidor HTTP
+    server = app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Servidor rodando na porta ${PORT}`);
+    });
 
-// Função para encerramento gracioso
-const shutdown = (signal) => {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-
-  console.log(`📥 Recebido sinal ${signal}`);
-
-  server.close(() => {
-    console.log("🛑 Servidor HTTP fechado");
-
-    if (backend) {
-      console.log("🛑 Encerrando backend...");
-      backend.kill(signal);
-    }
-  });
-
-  // Forçar encerramento após 30 segundos
-  setTimeout(() => {
-    console.log("⚠️ Forçando encerramento após timeout");
+    // Configurar timeout do servidor
+    server.timeout = 120000; // 2 minutos
+    server.keepAliveTimeout = 65000; // 65 segundos
+    server.headersTimeout = 66000; // 66 segundos
+  } catch (error) {
+    console.error("❌ Erro ao iniciar servidor:", error);
     process.exit(1);
-  }, 30000);
+  }
 };
 
 // Gerenciar sinais do processo
@@ -144,14 +171,5 @@ process.on("unhandledRejection", (reason) => {
   shutdown("SIGTERM");
 });
 
-// Monitorar processo do backend
-backend.on("exit", (code, signal) => {
-  if (!isShuttingDown) {
-    console.error(
-      "❌ Backend encerrou inesperadamente, reiniciando servidor..."
-    );
-    process.exit(1);
-  } else {
-    console.log(`Backend encerrado com código ${code} e sinal ${signal}`);
-  }
-});
+// Iniciar a aplicação
+start();
