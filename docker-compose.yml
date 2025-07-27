@@ -4,31 +4,17 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8988:8988"
+      - "80:8988"
     volumes:
       - ./backend/schedules.json:/app/backend/schedules.json
     environment:
       - NODE_ENV=production
+      - PORT=8988
+      - BACKEND_PORT=8999
     restart: unless-stopped
-    networks:
-      - easypanel
-    labels:
-      - "easypanel.enable=true"
-      - "easypanel.type=app"
-      - "easypanel.name=schedulezap"
-      - "traefik.enable=true"
-      - "traefik.http.routers.schedulezap.rule=Host(`evolution-schedulezap.jqzthr.easypanel.host`)"
-      - "traefik.http.services.schedulezap.loadbalancer.server.port=8988"
-      - "traefik.http.routers.schedulezap.entrypoints=web,websecure"
-      - "traefik.http.routers.schedulezap.tls=true"
-      - "traefik.http.routers.schedulezap.tls.certresolver=easypanel"
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:8988"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-
-networks:
-  easypanel:
-    external: true
