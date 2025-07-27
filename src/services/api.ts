@@ -236,7 +236,7 @@ async function testEvolutionConnection(
       throw new Error(`URL base retornou status ${baseResponse.status}`);
     }
 
-    // Teste 2: Verificar autenticação
+    // Teste 2: Verificar autenticação e listar instâncias
     console.log("👉 Teste 2: Verificando autenticação...");
     const authResponse = await axios.get(`${apiUrl}instance/fetchInstances`, {
       headers: { apikey: token },
@@ -252,10 +252,22 @@ async function testEvolutionConnection(
       throw new Error(`Erro de autenticação: status ${authResponse.status}`);
     }
 
-    // Teste 3: Verificar instância específica
+    // Verificar se a instância existe na lista retornada
+    const instances = Array.isArray(authResponse.data) ? authResponse.data : [];
+    const instanceExists = instances.some(
+      (inst: any) => inst.name === instance
+    );
+
+    if (!instanceExists) {
+      throw new Error(
+        `Instância '${instance}' não encontrada na lista de instâncias disponíveis`
+      );
+    }
+
+    // Teste 3: Verificar status da instância específica usando o nome exato
     console.log("👉 Teste 3: Verificando instância...");
     const instanceResponse = await axios.get(
-      `${apiUrl}instance/info/${instance}`,
+      `${apiUrl}instance/info/${encodeURIComponent(instance)}`,
       {
         headers: { apikey: token },
         timeout: 10000,
@@ -264,9 +276,34 @@ async function testEvolutionConnection(
     );
     console.log(`   Status: ${instanceResponse.status}`);
     console.log(`   Resposta:`, instanceResponse.data);
+
+    // Se a instância não for encontrada, tentar buscar pelo ID
     if (instanceResponse.status === 404) {
-      throw new Error(`Instância '${instance}' não encontrada`);
+      const instanceData = instances.find(
+        (inst: any) => inst.name === instance
+      );
+      if (instanceData?.id) {
+        const instanceByIdResponse = await axios.get(
+          `${apiUrl}instance/info/${instanceData.id}`,
+          {
+            headers: { apikey: token },
+            timeout: 10000,
+            validateStatus: null,
+          }
+        );
+        if (instanceByIdResponse.status === 200) {
+          return {
+            success: true,
+            baseUrl: true,
+            auth: true,
+            instance: true,
+            instanceInfo: instanceByIdResponse.data,
+          };
+        }
+      }
+      throw new Error(`Instância '${instance}' existe mas não responde`);
     }
+
     if (instanceResponse.status !== 200) {
       throw new Error(
         `Erro ao verificar instância: status ${instanceResponse.status}`
@@ -275,9 +312,9 @@ async function testEvolutionConnection(
 
     return {
       success: true,
-      baseUrl: baseResponse.status === 200,
-      auth: authResponse.status === 200,
-      instance: instanceResponse.status === 200,
+      baseUrl: true,
+      auth: true,
+      instance: true,
       instanceInfo: instanceResponse.data,
     };
   } catch (error: any) {
@@ -299,7 +336,10 @@ async function testEvolutionConnection(
     if (error.response?.status === 401) {
       throw new Error("Token de autenticação inválido");
     }
-    if (error.response?.status === 404) {
+    if (
+      error.response?.status === 404 &&
+      !error.message.includes("não encontrada")
+    ) {
       throw new Error("Endpoint não encontrado - verifique a URL da API");
     }
     throw new Error(error.message || "Erro desconhecido ao testar conexão");
