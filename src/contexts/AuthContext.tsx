@@ -1,61 +1,56 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-
-interface User {
-  id: string;
-  name: string;
-}
+import {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  ReactNode,
+} from "react";
+import { Navigate, useLocation } from "react-router-dom";
 
 interface AuthContextType {
-  user: User | null;
   isAuthenticated: boolean;
-  login: (password: string) => Promise<void>; // Corrigido para aceitar só senha
+  login: (password: string) => Promise<void>;
   logout: () => void;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+const AuthContext = createContext<AuthContextType | null>(null);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    // Persistência do login
-    const savedUser = localStorage.getItem("user");
-    return !!savedUser;
-  });
+// Definir interface para variáveis de ambiente do Vite
+interface ImportMetaEnv {
+  readonly VITE_PASSWORD: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Verificar se há um usuário salvo no localStorage
-    const savedUser = localStorage.getItem("user");
-    if (savedUser) {
-      const userData = JSON.parse(savedUser);
-      setUser(userData);
+    // Verificar se já está autenticado
+    const token = localStorage.getItem("auth_token");
+    if (token) {
       setIsAuthenticated(true);
-    } else {
-      setUser(null);
-      setIsAuthenticated(false);
     }
   }, []);
 
-  const PASSWORD = (import.meta as any).env.VITE_PASSWORD || "S3nha!2024@zap";
-
   const login = async (password: string) => {
-    if (password === PASSWORD) {
-      const userData = { id: "1", name: "Usuário" };
-      localStorage.setItem("user", JSON.stringify(userData));
+    if (password === import.meta.env.VITE_PASSWORD) {
+      localStorage.setItem("auth_token", "authenticated");
       setIsAuthenticated(true);
-      setUser(userData);
-      return;
+    } else {
+      throw new Error("Senha incorreta");
     }
-    throw new Error("Senha inválida");
   };
 
   const logout = () => {
-    setUser(null);
+    localStorage.removeItem("auth_token");
     setIsAuthenticated(false);
-    localStorage.removeItem("user");
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
@@ -63,8 +58,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error("useAuth deve ser usado dentro de um AuthProvider");
   }
   return context;
+}
+
+export function RequireAuth({ children }: { children: ReactNode }) {
+  const { isAuthenticated } = useAuth();
+  const location = useLocation();
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+
+  return <>{children}</>;
 }

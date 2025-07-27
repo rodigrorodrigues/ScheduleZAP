@@ -1,40 +1,53 @@
 #!/bin/bash
 
-# Script de Deploy para VPS
-# IP: 89.116.171.102
+# Cores para output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-echo "🚀 Iniciando deploy do ScheduleZAP na VPS..."
+# Configurações
+VPS_IP="89.116.171.102"
+PROJECT_PATH="/etc/easypanel/projects/evolution/schedulezap/code"
 
-# Configurar variáveis de ambiente
-export HOST=89.116.171.102
-export VITE_API_URL=http://$HOST:8999
+echo -e "${YELLOW}🚀 Iniciando deploy para VPS ($VPS_IP)...${NC}"
 
-# Parar containers existentes
-echo "🛑 Parando containers existentes..."
-docker-compose -f docker-compose.prod.yml down
+# Buildar o projeto localmente
+echo -e "${YELLOW}📦 Buildando o projeto...${NC}"
+npm run build
 
-# Remover containers antigos
-echo "🧹 Removendo containers antigos..."
-docker container prune -f
+# Criar arquivo de deploy com apenas os arquivos necessários
+echo -e "${YELLOW}📝 Criando arquivo de deploy...${NC}"
+tar czf deploy.tar.gz \
+    dist/ \
+    backend/ \
+    docker-compose.yml \
+    Dockerfile \
+    docker-entrypoint.js \
+    package.json \
+    package-lock.json
 
-# Construir e iniciar containers
-echo "🔨 Construindo e iniciando containers..."
-docker-compose -f docker-compose.prod.yml up -d --build
+# Enviar para a VPS
+echo -e "${YELLOW}📤 Enviando arquivos para a VPS...${NC}"
+scp deploy.tar.gz root@$VPS_IP:$PROJECT_PATH/
 
-# Aguardar inicialização
-echo "⏳ Aguardando inicialização dos serviços..."
-sleep 30
+# Executar comandos remotamente
+echo -e "${YELLOW}🔧 Executando comandos na VPS...${NC}"
+ssh root@$VPS_IP "cd $PROJECT_PATH && \
+    echo '📦 Extraindo arquivos...' && \
+    tar xzf deploy.tar.gz && \
+    rm deploy.tar.gz && \
+    echo '🛑 Parando contêineres...' && \
+    docker compose down && \
+    echo '🏗️ Reconstruindo contêineres...' && \
+    docker compose up -d --build && \
+    echo '📋 Logs do contêiner:' && \
+    docker compose logs -f --tail=100"
 
-# Verificar status
-echo "📊 Verificando status dos serviços..."
-docker-compose -f docker-compose.prod.yml ps
+# Limpar arquivos locais
+echo -e "${YELLOW}🧹 Limpando arquivos temporários...${NC}"
+rm deploy.tar.gz
 
-# Testar endpoints
-echo "🧪 Testando endpoints..."
-curl -s http://$HOST:8999/api/schedules || echo "❌ Backend não responde"
-curl -s http://$HOST:8988 | head -1 || echo "❌ Frontend não responde"
-
-echo "✅ Deploy concluído!"
-echo "🌐 Frontend: http://$HOST:8988"
-echo "🔧 Backend: http://$HOST:8999"
-echo "📋 Logs: docker-compose -f docker-compose.prod.yml logs -f" 
+echo -e "${GREEN}✅ Deploy concluído!${NC}"
+echo -e "${GREEN}🌐 A aplicação estará disponível em:${NC}"
+echo -e "${GREEN}   https://evolution-schedulezap.jqzthr.easypanel.host${NC}" 
