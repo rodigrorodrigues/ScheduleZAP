@@ -40,6 +40,29 @@ function saveSchedules(schedules) {
   }
 }
 
+// Função para verificar se o envio foi bem sucedido
+function isMessageSentSuccessfully(response) {
+  // Verificar diferentes formatos de resposta da Evolution API
+  if (!response || !response.data) return false;
+
+  const data = response.data;
+
+  // Formato 1: { status: "success", ... }
+  if (data.status === "success") return true;
+
+  // Formato 2: { key: { id: "...", status: "PENDING" }, ... }
+  if (data.key && data.key.status === "PENDING") return true;
+
+  // Formato 3: { key: "...", status: 200, message: "Message sent" }
+  if (data.status === 200 && data.message && data.message.includes("sent"))
+    return true;
+
+  // Formato 4: Verifica se há um ID de mensagem
+  if (data.key && data.key.id) return true;
+
+  return false;
+}
+
 // Rotas
 app.get("/api/schedules", (req, res) => {
   try {
@@ -135,21 +158,34 @@ async function processScheduledMessages() {
             }
           );
 
-          schedule.status = response.status === 200 ? "sent" : "failed";
+          console.log("📤 Resposta da Evolution API:", response.data);
+
+          const sent = isMessageSentSuccessfully(response);
+          schedule.status = sent ? "sent" : "failed";
           schedule.processedAt = new Date().toISOString();
-          schedule.error =
-            response.status !== 200 ? `Status: ${response.status}` : null;
+          schedule.error = sent
+            ? null
+            : `Status inesperado: ${JSON.stringify(response.data)}`;
           changed = true;
 
-          console.log(`✅ Mensagem processada: ${schedule.status}`);
+          console.log(
+            `${sent ? "✅" : "❌"} Mensagem processada: ${schedule.status}`
+          );
+          if (!sent) {
+            console.warn("⚠️ Resposta inesperada da API:", response.data);
+          }
         } catch (error) {
+          console.error("❌ Erro ao enviar mensagem:", {
+            message: error.message,
+            response: error.response?.data,
+            status: error.response?.status,
+          });
+
           schedule.status = "failed";
           schedule.processedAt = new Date().toISOString();
-          schedule.error = error.message;
+          schedule.error = error.response?.data?.message || error.message;
           schedule.retries++;
           changed = true;
-
-          console.error("❌ Erro ao enviar mensagem:", error.message);
         }
       }
     }
