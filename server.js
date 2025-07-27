@@ -1,7 +1,12 @@
-const express = require("express");
-const path = require("path");
-const fs = require("fs");
-const cors = require("cors");
+import express from "express";
+import path from "path";
+import fs from "fs";
+import cors from "cors";
+import { fileURLToPath } from "url";
+
+// Configuração para ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Configuração básica
 const app = express();
