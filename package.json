@@ -3,7 +3,6 @@
   "version": "1.0.0",
   "description": "Agendador de mensagens WhatsApp via Evolution API",
   "private": true,
-  "type": "module",
   "scripts": {
     "dev": "concurrently \"npm run backend\" \"vite\"",
     "backend": "cd backend && npm start",
@@ -21,9 +20,7 @@
     "react-hook-form": "^7.43.9",
     "react-hot-toast": "^2.4.1",
     "lucide-react": "^0.263.1",
-    "express": "^4.18.2",
-    "cors": "^2.8.5",
-    "http-proxy-middleware": "^2.0.6"
+    "express": "^4.18.2"
   },
   "devDependencies": {
     "@types/react": "^18.2.15",

@@ -9,9 +9,7 @@ COPY package*.json ./
 COPY backend/package*.json ./backend/
 
 # Instalar dependências
-RUN npm ci && \
-    cd backend && \
-    npm ci
+RUN npm ci && cd backend && npm ci
 
 # Copiar código fonte
 COPY . .
@@ -22,46 +20,42 @@ RUN npm run build
 # Estágio de produção
 FROM node:18-alpine
 
-# Instalar dumb-init para melhor gerenciamento de processos
-RUN apk add --no-cache dumb-init wget
+# Instalar dumb-init
+RUN apk add --no-cache dumb-init
 
 # Criar usuário não-root
-RUN addgroup -S appgroup && \
-    adduser -S appuser -G appgroup
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 # Criar diretório da aplicação
 WORKDIR /app
 
-# Copiar arquivos necessários do builder
+# Copiar arquivos necessários
 COPY --from=builder /build/dist ./dist
 COPY --from=builder /build/backend ./backend
 COPY --from=builder /build/server.js ./
 COPY --from=builder /build/package.json ./
 
-# Criar diretório para dados e configurar permissões
-RUN mkdir -p /app/backend && \
-    chown -R appuser:appgroup /app
+# Instalar dependências de produção
+RUN npm ci --only=production && cd backend && npm ci --only=production
 
-# Instalar apenas dependências de produção
-RUN npm install --omit=dev && \
-    cd backend && npm install --omit=dev
+# Configurar permissões
+RUN chown -R appuser:appgroup /app
 
 # Mudar para usuário não-root
 USER appuser
 
 # Configurar variáveis de ambiente
-ENV NODE_ENV=production \
-    PORT=8988
+ENV NODE_ENV=production PORT=8988
 
-# Criar volume para persistência
+# Volume para persistência
 VOLUME ["/app/backend"]
 
-# Verificação de saúde
+# Healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:8988 || exit 1
 
-# Usar dumb-init como entrypoint
+# Entrypoint
 ENTRYPOINT ["/usr/bin/dumb-init", "--"]
 
-# Comando para iniciar a aplicação
+# Comando
 CMD ["node", "server.js"] 
