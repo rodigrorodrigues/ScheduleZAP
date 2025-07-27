@@ -9,10 +9,25 @@ services:
       - ./backend/schedules.json:/app/backend/schedules.json
     environment:
       - NODE_ENV=production
+      - VIRTUAL_HOST=${VIRTUAL_HOST:-schedulezap.jqzthr.easypanel.host}
+      - LETSENCRYPT_HOST=${VIRTUAL_HOST:-schedulezap.jqzthr.easypanel.host}
+      - VIRTUAL_PORT=8988
     restart: unless-stopped
+    networks:
+      - easypanel
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.schedulezap.rule=Host(`${VIRTUAL_HOST:-schedulezap.jqzthr.easypanel.host}`)"
+      - "traefik.http.services.schedulezap.loadbalancer.server.port=8988"
+      - "traefik.http.routers.schedulezap.entrypoints=websecure"
+      - "traefik.http.routers.schedulezap.tls=true"
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:8988"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+
+networks:
+  easypanel:
+    external: true
