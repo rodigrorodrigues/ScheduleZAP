@@ -8,15 +8,22 @@ const app = express();
 const PORT = process.env.PORT || 8988;
 const SCHEDULES_FILE = path.join(__dirname, "backend", "schedules.json");
 
-// Garantir que o diretório backend existe
-if (!fs.existsSync(path.dirname(SCHEDULES_FILE))) {
-  fs.mkdirSync(path.dirname(SCHEDULES_FILE), { recursive: true });
+// Garantir que o arquivo de agendamentos existe
+function initializeSchedulesFile() {
+  try {
+    if (!fs.existsSync(SCHEDULES_FILE)) {
+      console.log("📝 Criando arquivo de agendamentos...");
+      fs.writeFileSync(SCHEDULES_FILE, "[]", "utf8");
+      console.log("✅ Arquivo de agendamentos criado com sucesso");
+    }
+  } catch (error) {
+    console.error("❌ Erro ao inicializar arquivo de agendamentos:", error);
+    process.exit(1);
+  }
 }
 
-// Garantir que o arquivo de agendamentos existe
-if (!fs.existsSync(SCHEDULES_FILE)) {
-  fs.writeFileSync(SCHEDULES_FILE, "[]", "utf8");
-}
+// Inicializar arquivo de agendamentos
+initializeSchedulesFile();
 
 // Middleware
 app.use(express.json());
@@ -42,6 +49,7 @@ app.use((err, req, res, next) => {
 // Funções auxiliares
 function loadSchedules() {
   try {
+    initializeSchedulesFile(); // Garantir que o arquivo existe antes de ler
     const data = fs.readFileSync(SCHEDULES_FILE, "utf8");
     return data ? JSON.parse(data) : [];
   } catch (error) {

@@ -34,13 +34,16 @@ WORKDIR /app
 
 # Copiar arquivos necessários do builder
 COPY --from=builder /build/dist ./dist
-COPY --from=builder /build/backend/package*.json ./
-COPY --from=builder /build/backend ./backend
+COPY --from=builder /build/backend/package*.json ./backend/
+COPY --from=builder /build/backend/index.js ./backend/
 COPY --from=builder /build/server.js ./
 
-# Instalar apenas dependências de produção
-RUN npm ci --only=production && \
+# Criar diretório para dados e configurar permissões
+RUN mkdir -p /app/backend && \
     chown -R appuser:appgroup /app
+
+# Instalar apenas dependências de produção
+RUN cd backend && npm ci --only=production
 
 # Mudar para usuário não-root
 USER appuser
@@ -50,7 +53,7 @@ ENV NODE_ENV=production \
     PORT=8988
 
 # Criar volume para persistência
-VOLUME ["/app/backend/schedules.json"]
+VOLUME ["/app/backend"]
 
 # Verificação de saúde
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
