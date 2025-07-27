@@ -1,38 +1,50 @@
-# --- Build do frontend ---
-FROM node:18-alpine AS frontend-build
-WORKDIR /app
-COPY package*.json ./
-COPY vite.config.ts ./
-COPY tsconfig*.json ./
-COPY postcss.config.js ./
-COPY tailwind.config.js ./
-COPY ./src ./src
-COPY ./index.html ./
-RUN npm ci && npm run build
+# Build stage
+FROM node:18-alpine as builder
 
-# --- Build do backend ---
-FROM node:18-alpine AS backend-build
-WORKDIR /app
-COPY backend ./backend
-WORKDIR /app/backend
-RUN npm ci --only=production
-RUN touch /app/backend/schedules.json
-
-# --- Imagem final do backend ---
-FROM node:18-alpine AS backend
-WORKDIR /app
+# Instalar dumb-init para melhor gerenciamento de processos
 RUN apk add --no-cache dumb-init
-COPY --from=backend-build /app/backend .
-USER root
-EXPOSE 8999
-ENTRYPOINT ["dumb-init", "--"]
-CMD ["node", "index.js"]
 
-# --- Imagem final do frontend ---
-FROM node:18-alpine AS frontend
+# Definir diretório de trabalho
 WORKDIR /app
-COPY --from=frontend-build /app/dist ./dist
-RUN npm install -g serve
-USER root
+
+# Copiar arquivos de dependências
+COPY package*.json ./
+COPY backend/package*.json ./backend/
+
+# Instalar dependências do frontend e backend
+RUN npm ci && cd backend && npm ci
+
+# Copiar código fonte
+COPY . .
+
+# Build do frontend
+RUN npm run build
+
+# Configuração de produção
+FROM node:18-alpine
+
+# Instalar dumb-init
+RUN apk add --no-cache dumb-init
+
+# Criar diretório de trabalho
+WORKDIR /app
+
+# Copiar dependências e build do frontend
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/backend/package*.json ./
+COPY --from=builder /app/backend ./backend
+
+# Instalar apenas dependências de produção do backend
+RUN cd backend && npm ci --only=production
+
+# Copiar script de entrada
+COPY docker-entrypoint.js .
+
+# Expor porta
 EXPOSE 8988
-CMD ["serve", "-s", "dist", "-l", "8988"] 
+
+# Usar dumb-init como entrypoint
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+
+# Comando para iniciar a aplicação
+CMD ["node", "docker-entrypoint.js"] 

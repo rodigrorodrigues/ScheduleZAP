@@ -1,40 +1,20 @@
+version: "3.8"
+
 services:
-  backend:
+  app:
     build:
       context: .
-      target: backend
-    container_name: schedulezap-backend
-    restart: unless-stopped
+      dockerfile: Dockerfile
     ports:
-      - "8999:8999" # Backend API port
+      - "8988:8988"
     volumes:
-      - ./backend/schedules.json:/app/schedules.json # Persist schedules.json
+      - ./backend/schedules.json:/app/backend/schedules.json
     environment:
       - NODE_ENV=production
-      - VITE_PASSWORD=${VITE_PASSWORD:-S3nha!2024@zap}
+    restart: unless-stopped
     healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--quiet",
-          "--tries=1",
-          "--spider",
-          "http://localhost:8999/api/schedules",
-        ]
+      test: ["CMD", "wget", "--spider", "http://localhost:8988"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
-
-  frontend:
-    build:
-      context: .
-      target: frontend
-    container_name: schedulezap-frontend
-    restart: unless-stopped
-    ports:
-      - "8988:8988" # Frontend port
-    environment:
-      - NODE_ENV=production
-      - VITE_PASSWORD=${VITE_PASSWORD:-S3nha!2024@zap}
+      start_period: 10s
