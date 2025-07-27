@@ -12,7 +12,7 @@ COPY package*.json ./
 COPY backend/package*.json ./backend/
 
 # Instalar dependências do frontend e backend
-RUN npm ci && cd backend && npm ci
+RUN npm install && cd backend && npm install
 
 # Copiar código fonte
 COPY . .
@@ -33,9 +33,8 @@ WORKDIR /app
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/backend/package*.json ./
 COPY --from=builder /app/backend ./backend
-
-# Instalar apenas dependências de produção do backend
-RUN cd backend && npm ci --only=production
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package*.json ./
 
 # Copiar script de entrada
 COPY docker-entrypoint.js .
