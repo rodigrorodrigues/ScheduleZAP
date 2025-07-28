@@ -1,32 +1,26 @@
-# ScheduleZAP
+# ScheduleZAP - Agendador de Mensagens WhatsApp
 
-Agendador de mensagens WhatsApp via Evolution API v2
+Um aplicativo web simples para agendar mensagens do WhatsApp usando a Evolution API.
 
 ## 🚀 Funcionalidades
 
-- ✅ Agendamento de mensagens WhatsApp
-- ✅ Interface web moderna e responsiva
-- ✅ Integração com Evolution API v2
-- ✅ Processamento automático de mensagens
-- ✅ Histórico de mensagens agendadas
-- ✅ Configuração de instâncias
-- ✅ Autenticação simples
-- ✅ Deploy via Docker Compose
-
-## 🛠️ Tecnologias
-
-- **Frontend**: React + TypeScript + Vite + Tailwind CSS
-- **Backend**: Node.js + Express
-- **API**: Evolution API v2
-- **Deploy**: Docker + Docker Compose
+- **Agendar Mensagens**: Agende mensagens para qualquer data e hora
+- **Mensagens Agendadas**: Visualize e gerencie todas as mensagens agendadas
+- **Configuração**: Configure a URL da Evolution API, token e nome da instância
+- **Interface Moderna**: Interface responsiva e intuitiva
+- **Status em Tempo Real**: Acompanhe o status de envio das mensagens
+- **Autenticação Segura**: Login com usuário e senha
+- **Persistência de Dados**: Banco SQLite para dados permanentes
+- **PWA (Progressive Web App)**: Instalável como app nativo
+- **Responsividade Mobile**: Interface otimizada para dispositivos móveis
 
 ## 📋 Pré-requisitos
 
-- Node.js 18+
-- Docker e Docker Compose
-- Evolution API v2 configurada
+- Docker e Docker Compose instalados
+- Evolution API configurada e rodando
+- API Key da Evolution API
 
-## 🚀 Deploy na VPS
+## 🛠️ Instalação
 
 ### 1. Clone o repositório
 
@@ -35,129 +29,144 @@ git clone <seu-repositorio>
 cd ScheduleZAP
 ```
 
-### 2. Configure as variáveis de ambiente (opcional)
+### 2. Configure a Evolution API
+
+Primeiro, você precisa ter a Evolution API rodando. Siga as instruções em:
+https://github.com/EvolutionAPI/evolution-api
+
+### 3. Execute com Docker Compose
 
 ```bash
-# Crie um arquivo .env se necessário
-echo "VITE_PASSWORD=sua_senha_aqui" > .env
-```
-
-### 3. Deploy com Docker Compose
-
-```bash
-# Deploy em produção
-docker-compose -f docker-compose.prod.yml up -d --build
-
-# Ou use o script de deploy
-chmod +x deploy.sh
-./deploy.sh
+docker-compose up --build -d
 ```
 
 ### 4. Acesse a aplicação
 
-```
-http://seu-ip:8988
-```
+Abra seu navegador e acesse: `http://localhost:8988`
 
-## 🔧 Desenvolvimento Local
+## ⚙️ Configuração
 
-### 1. Instalar dependências
+1. Acesse a seção "Configuração" no menu lateral
+2. Preencha os campos:
+   - **URL da Evolution API**: URL onde sua Evolution API está rodando (ex: http://localhost:8080)
+   - **API Key**: API Key obtida da Evolution API
+   - **Nome da Instância**: Nome da instância configurada na Evolution API
+3. Clique em "Salvar Configuração"
 
-```bash
-npm install
-cd backend && npm install
-```
+## 📱 Como Usar
 
-### 2. Configurar Evolution API
+### Agendar uma Mensagem
 
-- Acesse: http://localhost:8988/settings
-- Configure a URL da API, instância e token
+1. Vá para a seção "Agendar"
+2. Preencha os campos:
+   - **Número do WhatsApp**: Digite apenas números (ex: 5511999999999)
+   - **Data e Hora**: Selecione quando a mensagem deve ser enviada
+   - **Mensagem**: Digite o texto da mensagem
+3. Clique em "Agendar Mensagem"
 
-### 3. Executar em desenvolvimento
+### Visualizar Mensagens Agendadas
 
-```bash
-npm run dev
-```
+1. Vá para a seção "Mensagens Agendadas"
+2. Visualize todas as mensagens agendadas com seus respectivos status
+3. Use o botão de lixeira para remover mensagens
 
-## 📁 Estrutura do Projeto
+## 🔧 Estrutura do Projeto
 
 ```
 ScheduleZAP/
-├── src/                    # Frontend React
-│   ├── components/         # Componentes reutilizáveis
-│   ├── contexts/          # Contextos React
-│   ├── pages/             # Páginas da aplicação
-│   └── services/          # Serviços de API
-├── backend/               # Backend Node.js
-│   ├── index.js          # Servidor Express
-│   └── schedules.json    # Arquivo de agendamentos
-├── docker-compose.yml    # Configuração Docker
-├── Dockerfile            # Build da aplicação
-└── deploy.sh            # Script de deploy
+├── server.js              # Servidor Express
+├── package.json           # Dependências Node.js
+├── Dockerfile            # Configuração Docker
+├── docker-compose.yml    # Orquestração Docker
+├── public/               # Frontend
+│   ├── index.html        # Página principal
+│   └── app.js           # JavaScript do frontend
+└── README.md            # Este arquivo
 ```
 
-## 🔐 Configuração da Evolution API
+## 🌐 API Endpoints
 
-1. **URL da API**: URL da sua Evolution API (ex: http://seu-ip:8080)
-2. **Nome da Instância**: Nome da instância WhatsApp
-3. **Token**: Token de autenticação da Evolution API
+### Mensagens
 
-### Criando uma nova instância:
+- `GET /api/messages` - Listar mensagens agendadas
+- `POST /api/messages` - Agendar nova mensagem
+- `DELETE /api/messages/:id` - Remover mensagem
 
-1. Acesse as configurações
-2. Clique em "Listar Instâncias"
-3. Clique em "Criar Nova Instância"
-4. Escaneie o QR Code com o WhatsApp
+### Configuração
 
-## 📝 Uso
+- `GET /api/config` - Obter configurações
+- `POST /api/config` - Salvar configurações
 
-### Agendar uma mensagem:
+## 🔒 Segurança
 
-1. Acesse: `/schedule`
-2. Digite o número do WhatsApp (com DDD e código do país)
-3. Escreva a mensagem
-4. Selecione data e horário
-5. Clique em "Agendar"
+- As configurações são salvas localmente no arquivo `config.json`
+- O token da Evolution API é armazenado de forma segura
+- Validação de entrada em todos os formulários
 
-### Ver mensagens agendadas:
+## 🐛 Solução de Problemas
 
-1. Acesse: `/` (página inicial)
-2. Veja todas as mensagens agendadas
-3. Cancele mensagens pendentes se necessário
+### Mensagens não são enviadas
 
-## 🔍 Troubleshooting
+#### Erro 401 (Não Autorizado)
 
-### Problemas comuns:
+- **Problema**: API Key inválida ou não autorizada
+- **Solução**:
+  1. Verifique se a API Key da Evolution API está correta
+  2. Confirme se a API Key tem permissões para enviar mensagens
+  3. Use o botão "Testar Conexão" na seção Configuração
 
-1. **Evolution API não conecta**
+#### Erro 404 (Não Encontrado)
 
-   - Verifique se a URL está correta
-   - Confirme se o token é válido
-   - Teste a conexão nas configurações
+- **Problema**: Instância não encontrada
+- **Solução**:
+  1. Verifique se o nome da instância está correto
+  2. Confirme se a instância foi criada na Evolution API
+  3. Verifique se a instância está conectada ao WhatsApp
 
-2. **Mensagens não são enviadas**
+#### Erro de Conexão
 
-   - Verifique se a instância está conectada
-   - Confirme se o número está no formato correto
-   - Veja os logs do backend
+- **Problema**: Não foi possível conectar à Evolution API
+- **Solução**:
+  1. Verifique se a Evolution API está rodando
+  2. Confirme se a URL está correta (ex: http://localhost:8080)
+  3. Verifique se a porta está acessível
+  4. Teste a conectividade: `curl http://sua-evolution-api:porta`
 
-3. **Erro no deploy**
-   - Verifique se a porta 8988 está livre
-   - Confirme se o Docker está rodando
-   - Veja os logs: `docker-compose logs`
+### Verificação de Configuração
 
-## 📊 Logs
+1. **Acesse a seção Configuração**
+2. **Preencha os campos**:
+   - URL da Evolution API (ex: http://localhost:8080)
+   - API Key (obtida da Evolution API)
+   - Nome da instância (ex: default)
+3. **Clique em "Salvar Configuração"**
+4. **Clique em "Testar Conexão"** para verificar se está funcionando
 
-### Ver logs do container:
+### Logs Detalhados
+
+Para ver logs detalhados:
 
 ```bash
-docker-compose -f docker-compose.prod.yml logs -f
+# Docker
+docker-compose logs -f schedulezap
+
+# Local
+npm start
 ```
 
-### Ver logs específicos:
+Os logs mostrarão:
+
+- Tentativas de envio de mensagens
+- URLs sendo chamadas
+- Erros detalhados da Evolution API
+- Status de conectividade
+
+## 📝 Logs
+
+Para visualizar os logs da aplicação:
 
 ```bash
-docker-compose -f docker-compose.prod.yml logs app
+docker-compose logs -f schedulezap
 ```
 
 ## 🔄 Atualizações
@@ -165,24 +174,19 @@ docker-compose -f docker-compose.prod.yml logs app
 Para atualizar a aplicação:
 
 ```bash
-# Parar containers
-docker-compose -f docker-compose.prod.yml down
-
-# Fazer pull das mudanças
-git pull origin main
-
-# Rebuild e start
-docker-compose -f docker-compose.prod.yml up -d --build
+git pull
+docker-compose down
+docker-compose up --build -d
 ```
-
-## 📞 Suporte
-
-Para suporte ou dúvidas:
-
-- Verifique os logs do container
-- Teste a conectividade com a Evolution API
-- Confirme as configurações nas configurações da aplicação
 
 ## 📄 Licença
 
-Este projeto é de uso livre para fins educacionais e comerciais.
+Este projeto está sob a licença MIT.
+
+## 🤝 Contribuição
+
+Contribuições são bem-vindas! Sinta-se à vontade para abrir issues ou pull requests.
+
+---
+
+**Desenvolvido com ❤️ para facilitar o agendamento de mensagens do WhatsApp**

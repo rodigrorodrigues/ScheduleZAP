@@ -1,0 +1,25 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background -->
+  <rect width="512" height="512" rx="80" fill="url(#grad)"/>
+  
+  <!-- WhatsApp Icon -->
+  <g transform="translate(128, 128) scale(0.5)">
+    <path d="M256 48C141.1 48 48 141.1 48 256s93.1 208 208 208 208-93.1 208-208S370.9 48 256 48zm0 398.7c-105.1 0-190.7-85.5-190.7-190.7S150.9 65.3 256 65.3 446.7 150.9 446.7 256 361.1 446.7 256 446.7z" fill="white"/>
+    <path d="M256 96c-88.2 0-160 71.8-160 160s71.8 160 160 160 160-71.8 160-160S344.2 96 256 96zm0 288c-70.7 0-128-57.3-128-128s57.3-128 128-128 128 57.3 128 128-57.3 128-128 128z" fill="white"/>
+    <path d="M256 144c-61.8 0-112 50.2-112 112s50.2 112 112 112 112-50.2 112-112S317.8 144 256 144zm0 176c-35.3 0-64-28.7-64-64s28.7-64 64-64 64 28.7 64 64-28.7 64-64 64z" fill="white"/>
+    <circle cx="256" cy="256" r="32" fill="white"/>
+  </g>
+  
+  <!-- Clock Icon -->
+  <g transform="translate(320, 320) scale(0.3)">
+    <circle cx="256" cy="256" r="200" fill="none" stroke="white" stroke-width="20"/>
+    <path d="M256 96v160l120 80" stroke="white" stroke-width="20" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg> 

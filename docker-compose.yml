@@ -1,28 +1,21 @@
+version: "3.8"
+
 services:
-  app:
+  schedulezap:
     build: .
+    container_name: schedulezap
     ports:
       - "8988:8988"
     volumes:
-      - schedules:/app/backend
+      - ./data:/app/data
+      - ./logs:/app/logs
     environment:
       - NODE_ENV=production
       - PORT=8988
     restart: unless-stopped
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:8988/health",
-        ]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    networks:
+      - schedulezap-network
 
-volumes:
-  schedules:
+networks:
+  schedulezap-network:
+    driver: bridge

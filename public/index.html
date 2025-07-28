@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <title>ScheduleZAP - Agendador de Mensagens WhatsApp</title>
+
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#667eea" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="ScheduleZAP" />
+    <meta name="msapplication-TileColor" content="#667eea" />
+    <meta name="msapplication-tap-highlight" content="no" />
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json" />
+
+    <!-- Icons -->
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="32x32"
+      href="/icons/icon-32x32.png"
+    />
+    <link
+      rel="icon"
+      type="image/png"
+      sizes="16x16"
+      href="/icons/icon-16x16.png"
+    />
+    <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+    <link
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+      rel="stylesheet"
+    />
+    <style>
+      .sidebar {
+        min-height: 100vh;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      }
+      .sidebar .nav-link {
+        color: rgba(255, 255, 255, 0.8);
+        border-radius: 10px;
+        margin: 5px 0;
+        transition: all 0.3s;
+      }
+      .sidebar .nav-link:hover,
+      .sidebar .nav-link.active {
+        color: white;
+        background: rgba(255, 255, 255, 0.1);
+        transform: translateX(5px);
+      }
+      .main-content {
+        background: #f8f9fa;
+        min-height: 100vh;
+      }
+
+      /* Mobile Responsiveness */
+      @media (max-width: 768px) {
+        .sidebar {
+          min-height: auto;
+          position: fixed;
+          top: 0;
+          left: -100%;
+          width: 280px;
+          z-index: 1050;
+          transition: left 0.3s ease;
+        }
+        .sidebar.show {
+          left: 0;
+        }
+        .main-content {
+          margin-left: 0;
+          padding: 1rem;
+        }
+        .mobile-menu-toggle {
+          display: block;
+          position: fixed;
+          top: 1rem;
+          left: 1rem;
+          z-index: 1060;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          border: none;
+          color: white;
+          padding: 0.5rem;
+          border-radius: 50%;
+          width: 50px;
+          height: 50px;
+        }
+        .mobile-overlay {
+          display: none;
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.5);
+          z-index: 1040;
+        }
+        .mobile-overlay.show {
+          display: block;
+        }
+        .card {
+          margin-bottom: 1rem;
+        }
+        .form-control,
+        .btn {
+          font-size: 16px; /* Previne zoom no iOS */
+        }
+      }
+      @media (min-width: 769px) {
+        .mobile-menu-toggle {
+          display: none;
+        }
+      }
+      .card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+        transition: transform 0.3s;
+      }
+      .card:hover {
+        transform: translateY(-5px);
+      }
+      .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 10px;
+      }
+      .btn-danger {
+        border-radius: 10px;
+      }
+      .form-control,
+      .form-select {
+        border-radius: 10px;
+        border: 2px solid #e9ecef;
+      }
+      .form-control:focus,
+      .form-select:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+      }
+      .status-badge {
+        border-radius: 20px;
+        padding: 5px 15px;
+        font-size: 0.8rem;
+      }
+      .status-pending {
+        background: #fff3cd;
+        color: #856404;
+      }
+      .status-sent {
+        background: #d4edda;
+        color: #155724;
+      }
+      .status-error {
+        background: #f8d7da;
+        color: #721c24;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Mobile Menu Toggle -->
+    <button class="mobile-menu-toggle" onclick="toggleMobileMenu()">
+      <i class="fas fa-bars"></i>
+    </button>
+
+    <!-- Mobile Overlay -->
+    <div class="mobile-overlay" onclick="closeMobileMenu()"></div>
+
+    <div class="container-fluid">
+      <div class="row">
+        <!-- Sidebar -->
+        <div class="col-md-3 col-lg-2 sidebar p-3">
+          <div class="text-center mb-4">
+            <h4 class="text-white">
+              <i class="fab fa-whatsapp me-2"></i>
+              ScheduleZAP
+            </h4>
+            <small class="text-white-50" id="userInfo">Carregando...</small>
+          </div>
+          <nav class="nav flex-column">
+            <a
+              class="nav-link active"
+              href="#"
+              onclick="showSection('schedule')"
+            >
+              <i class="fas fa-calendar-plus me-2"></i>
+              Agendar
+            </a>
+            <a class="nav-link" href="#" onclick="showSection('scheduled')">
+              <i class="fas fa-list me-2"></i>
+              Mensagens Agendadas
+            </a>
+            <a class="nav-link" href="#" onclick="showSection('config')">
+              <i class="fas fa-cog me-2"></i>
+              Configuração
+            </a>
+            <hr class="text-white-50" />
+            <a class="nav-link text-danger" href="#" onclick="logout()">
+              <i class="fas fa-sign-out-alt me-2"></i>
+              Sair
+            </a>
+          </nav>
+        </div>
+
+        <!-- Main Content -->
+        <div class="col-md-9 col-lg-10 main-content p-4">
+          <!-- Seção Agendar -->
+          <div id="schedule-section" class="section">
+            <div class="row">
+              <div class="col-12">
+                <h2 class="mb-4">
+                  <i class="fas fa-calendar-plus text-primary me-2"></i>
+                  Agendar Nova Mensagem
+                </h2>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-lg-8">
+                <div class="card">
+                  <div class="card-body">
+                    <form id="scheduleForm">
+                      <div class="row">
+                        <div class="col-md-6 mb-3">
+                          <label for="phone" class="form-label"
+                            >Número do WhatsApp</label
+                          >
+                          <input
+                            type="text"
+                            class="form-control"
+                            id="phone"
+                            placeholder="5511999999999"
+                            required
+                          />
+                          <div class="form-text">
+                            Digite apenas números, sem + ou espaços
+                          </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                          <label for="scheduledTime" class="form-label"
+                            >Data e Hora</label
+                          >
+                          <input
+                            type="datetime-local"
+                            class="form-control"
+                            id="scheduledTime"
+                            required
+                          />
+                        </div>
+                      </div>
+                      <div class="mb-3">
+                        <label for="message" class="form-label">Mensagem</label>
+                        <textarea
+                          class="form-control"
+                          id="message"
+                          rows="5"
+                          placeholder="Digite sua mensagem aqui..."
+                          required
+                        ></textarea>
+                      </div>
+                      <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-paper-plane me-2"></i>
+                        Agendar Mensagem
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Seção Mensagens Agendadas -->
+          <div id="scheduled-section" class="section" style="display: none">
+            <div class="row">
+              <div class="col-12">
+                <h2 class="mb-4">
+                  <i class="fas fa-list text-primary me-2"></i>
+                  Mensagens Agendadas
+                </h2>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-12">
+                <div class="card">
+                  <div class="card-body">
+                    <div id="messagesList">
+                      <div class="text-center text-muted">
+                        <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                        <p>Carregando mensagens...</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Seção Configuração -->
+          <div id="config-section" class="section" style="display: none">
+            <div class="row">
+              <div class="col-12">
+                <h2 class="mb-4">
+                  <i class="fas fa-cog text-primary me-2"></i>
+                  Configuração da Evolution API
+                </h2>
+              </div>
+            </div>
+            <div class="row">
+              <div class="col-lg-8">
+                <div class="card">
+                  <div class="card-body">
+                    <form id="configForm">
+                      <div class="mb-3">
+                        <label for="evolutionApiUrl" class="form-label"
+                          >URL da Evolution API</label
+                        >
+                        <input
+                          type="url"
+                          class="form-control"
+                          id="evolutionApiUrl"
+                          placeholder="http://localhost:8080"
+                          required
+                        />
+                      </div>
+                      <div class="mb-3">
+                        <label for="token" class="form-label">API Key</label>
+                        <input
+                          type="password"
+                          class="form-control"
+                          id="token"
+                          placeholder="Sua API Key aqui"
+                          required
+                        />
+                        <div class="form-text">
+                          Obtenha sua API Key na Evolution API
+                        </div>
+                      </div>
+                      <div class="mb-3">
+                        <label for="instanceName" class="form-label"
+                          >Nome da Instância</label
+                        >
+                        <input
+                          type="text"
+                          class="form-control"
+                          id="instanceName"
+                          placeholder="default"
+                          required
+                        />
+                      </div>
+                      <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-2"></i>
+                        Salvar Configuração
+                      </button>
+                      <button
+                        type="button"
+                        class="btn btn-info ms-2"
+                        onclick="testConnection()"
+                      >
+                        <i class="fas fa-wifi me-2"></i>
+                        Testar Conexão
+                      </button>
+                    </form>
+                  </div>
+                </div>
+              </div>
+              <div class="col-lg-4">
+                <div class="card">
+                  <div class="card-body">
+                    <h5 class="card-title">
+                      <i class="fas fa-question-circle text-info me-2"></i>
+                      Como Configurar
+                    </h5>
+                    <ol class="list-unstyled">
+                      <li class="mb-2">1. Instale a Evolution API</li>
+                      <li class="mb-2">2. Configure uma instância</li>
+                      <li class="mb-2">3. Obtenha a API Key</li>
+                      <li class="mb-2">4. Preencha os dados acima</li>
+                    </ol>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast para notificações -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+      <div id="toast" class="toast" role="alert">
+        <div class="toast-header">
+          <strong class="me-auto">ScheduleZAP</strong>
+          <button
+            type="button"
+            class="btn-close"
+            data-bs-dismiss="toast"
+          ></button>
+        </div>
+        <div class="toast-body" id="toastBody"></div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
