@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 8999;
+const PORT = process.env.PORT || 8988;
 const SCHEDULE_FILE = join(__dirname, "schedules.json");
 
 // Middleware
@@ -27,6 +27,9 @@ app.use(
     credentials: true,
   })
 );
+
+// Servir arquivos estáticos do frontend
+app.use(express.static(join(__dirname, "../dist")));
 
 // Garantir que o arquivo de agendamentos existe
 if (!fs.existsSync(SCHEDULE_FILE)) {
@@ -141,6 +144,11 @@ app.delete("/api/schedules/:id", (req, res) => {
 // Rota de health check
 app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+// Rota fallback para SPA
+app.get("*", (req, res) => {
+  res.sendFile(join(__dirname, "../dist/index.html"));
 });
 
 // Processador de mensagens agendadas
