@@ -17,42 +17,40 @@ if ("serviceWorker" in navigator) {
 }
 
 // Inicialização
-document.addEventListener("DOMContentLoaded", async function () {
-  // Verificar autenticação
-  const authStatus = await checkAuth();
-  if (!authStatus.authenticated) {
-    window.location.href = "/login.html";
-    return;
+document.addEventListener("DOMContentLoaded", function () {
+  // Verificar se está na página principal
+  if (window.location.pathname === "/") {
+    // Verificar autenticação
+    checkAuth().then((authStatus) => {
+      if (!authStatus.authenticated) {
+        window.location.href = "/login.html";
+        return;
+      }
+
+      // Usuário autenticado, inicializar aplicação
+      updateUserInfo(authStatus.username);
+      toast = new bootstrap.Toast(document.getElementById("toast"));
+      loadConfig();
+      loadMessages();
+
+      // Event listeners
+      document
+        .getElementById("scheduleForm")
+        .addEventListener("submit", handleScheduleSubmit);
+      document
+        .getElementById("configForm")
+        .addEventListener("submit", handleConfigSubmit);
+
+      // Definir data/hora mínima como agora
+      const now = new Date();
+      const localDateTime = new Date(
+        now.getTime() - now.getTimezoneOffset() * 60000
+      )
+        .toISOString()
+        .slice(0, 16);
+      document.getElementById("scheduledTime").min = localDateTime;
+    });
   }
-
-  // Atualizar informações do usuário
-  updateUserInfo(authStatus.username);
-
-  // Inicializar toast
-  toast = new bootstrap.Toast(document.getElementById("toast"));
-
-  // Carregar configurações
-  loadConfig();
-
-  // Carregar mensagens agendadas
-  loadMessages();
-
-  // Event listeners
-  document
-    .getElementById("scheduleForm")
-    .addEventListener("submit", handleScheduleSubmit);
-  document
-    .getElementById("configForm")
-    .addEventListener("submit", handleConfigSubmit);
-
-  // Definir data/hora mínima como agora
-  const now = new Date();
-  const localDateTime = new Date(
-    now.getTime() - now.getTimezoneOffset() * 60000
-  )
-    .toISOString()
-    .slice(0, 16);
-  document.getElementById("scheduledTime").min = localDateTime;
 });
 
 // Função para mostrar seções
@@ -136,12 +134,30 @@ function getStatusBadge(message) {
 // Função para carregar mensagens agendadas
 async function loadMessages() {
   try {
-    const response = await fetch("/api/messages");
+    console.log("Carregando mensagens...");
+
+    // Adicionar timestamp para evitar cache
+    const response = await fetch("/api/messages?_t=" + Date.now(), {
+      method: "GET",
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+      },
+    });
+
+    if (!response.ok) {
+      console.error("Erro na resposta:", response.status, response.statusText);
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
     const messages = await response.json();
+    console.log("Mensagens recebidas:", messages);
 
     const messagesList = document.getElementById("messagesList");
+    console.log("Elemento messagesList encontrado:", !!messagesList);
 
     if (messages.length === 0) {
+      console.log("Nenhuma mensagem encontrada");
       messagesList.innerHTML = `
                 <div class="text-center text-muted">
                     <i class="fas fa-inbox fa-3x mb-3"></i>
@@ -231,34 +247,49 @@ async function handleScheduleSubmit(event) {
   const message = document.getElementById("message").value;
   const scheduledTime = document.getElementById("scheduledTime").value;
 
+  console.log("Dados do formulário:", { phone, message, scheduledTime });
+
   if (!phone || !message || !scheduledTime) {
     showToast("Todos os campos são obrigatórios", "error");
     return;
   }
 
   try {
+    const payload = {
+      phone,
+      message,
+      scheduledTime: new Date(scheduledTime).toISOString(),
+    };
+
+    console.log("Enviando payload:", payload);
+
     const response = await fetch("/api/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        phone,
-        message,
-        scheduledTime: new Date(scheduledTime).toISOString(),
-      }),
+      body: JSON.stringify(payload),
     });
 
+    console.log("Resposta do agendamento:", response.status, response.ok);
+
     if (response.ok) {
+      const result = await response.json();
+      console.log("Mensagem agendada:", result);
       showToast("Mensagem agendada com sucesso!");
       document.getElementById("scheduleForm").reset();
 
       // Atualizar lista se estiver na seção de mensagens
       if (currentSection === "scheduled") {
-        loadMessages();
+        console.log("Atualizando lista de mensagens...");
+        // Aguardar um pouco antes de recarregar
+        setTimeout(() => {
+          loadMessages();
+        }, 100);
       }
     } else {
       const error = await response.json();
+      console.error("Erro no agendamento:", error);
       showToast(error.error || "Erro ao agendar mensagem", "error");
     }
   } catch (error) {
@@ -330,21 +361,47 @@ async function testConnection() {
   }
 }
 
+// Função para atualizar mensagens manualmente
+function refreshMessages() {
+  console.log("Atualizando mensagens manualmente...");
+  showToast("Atualizando mensagens...", "warning");
+  loadMessages();
+}
+
 // Função para deletar mensagem
 async function deleteMessage(id) {
+  console.log("Tentando deletar mensagem:", id);
+
   if (!confirm("Tem certeza que deseja remover esta mensagem?")) {
+    console.log("Usuário cancelou a exclusão");
     return;
   }
 
   try {
+    console.log("Enviando requisição DELETE para:", `/api/messages/${id}`);
     const response = await fetch(`/api/messages/${id}`, {
       method: "DELETE",
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+      },
     });
 
+    console.log("Resposta da exclusão:", response.status, response.ok);
+
     if (response.ok) {
+      const result = await response.json();
+      console.log("Resultado da exclusão:", result);
       showToast("Mensagem removida com sucesso!");
-      loadMessages();
+      console.log("Recarregando lista de mensagens...");
+
+      // Aguardar um pouco antes de recarregar
+      setTimeout(() => {
+        loadMessages();
+      }, 100);
     } else {
+      const errorData = await response.json();
+      console.error("Erro na resposta:", errorData);
       showToast("Erro ao remover mensagem", "error");
     }
   } catch (error) {
@@ -359,7 +416,6 @@ async function checkAuth() {
     const response = await fetch("/api/auth/status");
     return await response.json();
   } catch (error) {
-    console.error("Erro ao verificar autenticação:", error);
     return { authenticated: false };
   }
 }

@@ -20,9 +20,14 @@ app.use(express.static(path.join(__dirname, "public")));
 app.use(
   session({
     secret: "schedulezap-secret-key",
-    resave: false,
-    saveUninitialized: false,
-    cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 }, // 24 horas
+    resave: true,
+    saveUninitialized: true,
+    cookie: {
+      secure: false,
+      maxAge: 24 * 60 * 60 * 1000, // 24 horas
+      httpOnly: true,
+      sameSite: "lax",
+    },
   })
 );
 
@@ -195,7 +200,9 @@ app.get("/api/auth/status", (req, res) => {
 // GET - Listar mensagens agendadas
 app.get("/api/messages", requireAuth, async (req, res) => {
   try {
+    console.log("Buscando mensagens agendadas...");
     const messages = await db.getAllMessages();
+    console.log(`Encontradas ${messages.length} mensagens:`, messages);
     res.json(messages);
   } catch (error) {
     console.error("Erro ao buscar mensagens:", error);
@@ -207,13 +214,21 @@ app.get("/api/messages", requireAuth, async (req, res) => {
 app.post("/api/messages", requireAuth, async (req, res) => {
   const { phone, message, scheduledTime } = req.body;
 
+  console.log("Recebendo dados para agendamento:", {
+    phone,
+    message,
+    scheduledTime,
+  });
+
   if (!phone || !message || !scheduledTime) {
+    console.log("Dados obrigatórios faltando");
     return res.status(400).json({ error: "Todos os campos são obrigatórios" });
   }
 
   // Validar formato do número de telefone
   const cleanPhone = phone.replace(/\D/g, "");
   if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+    console.log("Número de telefone inválido:", cleanPhone);
     return res.status(400).json({
       error:
         "Número de telefone inválido. Use apenas números (ex: 5511999999999)",
@@ -229,8 +244,11 @@ app.post("/api/messages", requireAuth, async (req, res) => {
     sent: false,
   };
 
+  console.log("Mensagem a ser salva:", newMessage);
+
   try {
     await db.saveMessage(newMessage);
+    console.log("Mensagem salva com sucesso:", newMessage.id);
     res.status(201).json(newMessage);
   } catch (error) {
     console.error("Erro ao salvar mensagem:", error);
@@ -242,8 +260,11 @@ app.post("/api/messages", requireAuth, async (req, res) => {
 app.delete("/api/messages/:id", requireAuth, async (req, res) => {
   const { id } = req.params;
 
+  console.log("Tentando deletar mensagem:", id);
+
   try {
     await db.deleteMessage(id);
+    console.log("Mensagem deletada com sucesso:", id);
     res.json({ message: "Mensagem removida com sucesso" });
   } catch (error) {
     console.error("Erro ao deletar mensagem:", error);
@@ -344,9 +365,7 @@ app.get("/sw.js", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "sw.js"));
 });
 
-app.get("/icons/:icon", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "icons", req.params.icon));
-});
+// Rota para ícones removida para evitar erros
 
 // Inicializar aplicação
 async function startServer() {
