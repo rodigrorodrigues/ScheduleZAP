@@ -21,6 +21,11 @@ self.addEventListener("install", (event) => {
 
 // Fetch event
 self.addEventListener("fetch", (event) => {
+  // Só processar requisições GET
+  if (event.request.method !== "GET") {
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request).then((response) => {
       // Retorna o cache se encontrado

@@ -152,6 +152,48 @@
         background: #f8d7da;
         color: #721c24;
       }
+
+      /* Estilos para o seletor de conversas */
+      .chat-item {
+        transition: all 0.3s ease;
+        cursor: pointer;
+      }
+
+      .chat-item:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+      }
+
+      .chat-item .card-body {
+        border-radius: 10px;
+      }
+
+      #chatSearchInput {
+        border-radius: 10px;
+      }
+
+      .modal-content {
+        border-radius: 15px;
+        border: none;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+      }
+
+      .modal-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 15px 15px 0 0;
+      }
+
+      .modal-header .btn-close {
+        filter: invert(1);
+      }
+
+      /* Garantir que o botão de seleção de conversa seja visível */
+      .input-group .btn {
+        display: inline-block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+      }
     </style>
   </head>
   <body>
@@ -187,9 +229,14 @@
               <i class="fas fa-list me-2"></i>
               Mensagens Agendadas
             </a>
-            <a class="nav-link" href="#" onclick="showSection('config')">
-              <i class="fas fa-cog me-2"></i>
-              Configuração
+            <a
+              class="nav-link d-none"
+              id="adminNav"
+              href="#"
+              onclick="showSection('admin')"
+            >
+              <i class="fas fa-user-shield me-2"></i>
+              Admin
             </a>
             <hr class="text-white-50" />
             <a class="nav-link text-danger" href="#" onclick="logout()">
@@ -219,17 +266,25 @@
                       <div class="row">
                         <div class="col-md-6 mb-3">
                           <label for="phone" class="form-label"
-                            >Número do WhatsApp</label
+                            >Destino (contato ou grupo)</label
                           >
-                          <input
-                            type="text"
-                            class="form-control"
-                            id="phone"
-                            placeholder="5511999999999"
-                            required
-                          />
-                          <div class="form-text">
-                            Digite apenas números, sem + ou espaços
+                          <div class="input-group">
+                            <input
+                              type="text"
+                              class="form-control"
+                              id="phone"
+                              placeholder="5511999999999"
+                              required
+                            />
+                            <button
+                              class="btn btn-outline-secondary"
+                              type="button"
+                              onclick="openChatSelector()"
+                              title="Selecionar grupo"
+                            >
+                              <i class="fas fa-users me-1"></i>
+                              Grupos
+                            </button>
                           </div>
                         </div>
                         <div class="col-md-6 mb-3">
@@ -302,87 +357,89 @@
             </div>
           </div>
 
-          <!-- Seção Configuração -->
-          <div id="config-section" class="section" style="display: none">
+          <!-- Seção Admin -->
+          <div id="admin-section" class="section" style="display: none">
             <div class="row">
-              <div class="col-12">
-                <h2 class="mb-4">
-                  <i class="fas fa-cog text-primary me-2"></i>
-                  Configuração da Evolution API
+              <div
+                class="col-12 d-flex justify-content-between align-items-center mb-3"
+              >
+                <h2>
+                  <i class="fas fa-user-shield text-primary me-2"></i>
+                  Administração
                 </h2>
+                <div>
+                  <button
+                    class="btn btn-success me-2"
+                    onclick="openCreateUserModal()"
+                  >
+                    <i class="fas fa-plus me-1"></i>
+                    Novo Usuário
+                  </button>
+                  <button
+                    class="btn btn-outline-primary btn-sm"
+                    onclick="loadUsers()"
+                  >
+                    <i class="fas fa-sync-alt me-1"></i>
+                    Atualizar
+                  </button>
+                </div>
               </div>
             </div>
-            <div class="row">
-              <div class="col-lg-8">
-                <div class="card">
-                  <div class="card-body">
-                    <form id="configForm">
-                      <div class="mb-3">
-                        <label for="evolutionApiUrl" class="form-label"
-                          >URL da Evolution API</label
-                        >
-                        <input
-                          type="url"
-                          class="form-control"
-                          id="evolutionApiUrl"
-                          placeholder="http://localhost:8080"
-                          required
-                        />
-                      </div>
-                      <div class="mb-3">
-                        <label for="token" class="form-label">API Key</label>
-                        <input
-                          type="password"
-                          class="form-control"
-                          id="token"
-                          placeholder="Sua API Key aqui"
-                          required
-                        />
-                        <div class="form-text">
-                          Obtenha sua API Key na Evolution API
-                        </div>
-                      </div>
-                      <div class="mb-3">
-                        <label for="instanceName" class="form-label"
-                          >Nome da Instância</label
-                        >
-                        <input
-                          type="text"
-                          class="form-control"
-                          id="instanceName"
-                          placeholder="default"
-                          required
-                        />
-                      </div>
-                      <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-save me-2"></i>
-                        Salvar Configuração
-                      </button>
-                      <button
-                        type="button"
-                        class="btn btn-info ms-2"
-                        onclick="testConnection()"
-                      >
-                        <i class="fas fa-wifi me-2"></i>
-                        Testar Conexão
-                      </button>
-                    </form>
+
+            <!-- Estatísticas -->
+            <div class="row mb-4">
+              <div class="col-md-3">
+                <div class="card bg-primary text-white">
+                  <div class="card-body text-center">
+                    <h4 id="totalUsers">-</h4>
+                    <small>Total de Usuários</small>
                   </div>
                 </div>
               </div>
-              <div class="col-lg-4">
+              <div class="col-md-3">
+                <div class="card bg-success text-white">
+                  <div class="card-body text-center">
+                    <h4 id="activeUsers">-</h4>
+                    <small>Usuários Ativos</small>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card bg-warning text-white">
+                  <div class="card-body text-center">
+                    <h4 id="adminUsers">-</h4>
+                    <small>Administradores</small>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card bg-info text-white">
+                  <div class="card-body text-center">
+                    <h4 id="totalMessages">-</h4>
+                    <small>Mensagens Agendadas</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row">
+              <div class="col-12">
                 <div class="card">
-                  <div class="card-body">
-                    <h5 class="card-title">
-                      <i class="fas fa-question-circle text-info me-2"></i>
-                      Como Configurar
+                  <div class="card-header">
+                    <h5 class="card-title mb-0">
+                      <i class="fas fa-users-cog me-2"></i> Gerenciar Usuários
                     </h5>
-                    <ol class="list-unstyled">
-                      <li class="mb-2">1. Instale a Evolution API</li>
-                      <li class="mb-2">2. Configure uma instância</li>
-                      <li class="mb-2">3. Obtenha a API Key</li>
-                      <li class="mb-2">4. Preencha os dados acima</li>
-                    </ol>
+                  </div>
+                  <div class="card-body">
+                    <div id="usersList">
+                      <div class="text-center text-muted p-3">
+                        <i class="fas fa-users fa-2x mb-2"></i>
+                        <p>
+                          Clique em "Atualizar" para carregar a lista de
+                          usuários
+                        </p>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -404,6 +461,290 @@
           ></button>
         </div>
         <div class="toast-body" id="toastBody"></div>
+      </div>
+    </div>
+
+    <!-- Modal para seleção de conversas -->
+    <div
+      class="modal fade"
+      id="chatSelectorModal"
+      tabindex="-1"
+      aria-labelledby="chatSelectorModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="chatSelectorModalLabel">
+              <i class="fas fa-users me-2"></i>
+              Selecionar Grupo
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <div class="input-group">
+                <input
+                  type="text"
+                  class="form-control"
+                  id="chatSearchInput"
+                  placeholder="Buscar grupos..."
+                  onkeyup="filterChats()"
+                />
+                <button
+                  class="btn btn-outline-primary"
+                  type="button"
+                  onclick="reloadGroups()"
+                >
+                  <i class="fas fa-sync-alt"></i>
+                </button>
+              </div>
+
+              <!-- Filtros removidos: manter apenas busca por texto -->
+            </div>
+            <div id="chatsList">
+              <div class="text-center text-muted">
+                <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
+                <p>Carregando conversas...</p>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal para criação de usuários -->
+    <div
+      class="modal fade"
+      id="createUserModal"
+      tabindex="-1"
+      aria-labelledby="createUserModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="createUserModalLabel">
+              <i class="fas fa-user-plus me-2"></i>
+              Criar Novo Usuário
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <form id="createUserForm">
+              <div class="mb-3">
+                <label for="modalUsername" class="form-label"
+                  >Nome de Usuário</label
+                >
+                <input
+                  type="text"
+                  class="form-control"
+                  id="modalUsername"
+                  placeholder="Digite o nome de usuário"
+                  required
+                  minlength="3"
+                />
+                <div class="form-text">Mínimo 3 caracteres</div>
+              </div>
+              <div class="mb-3">
+                <label for="modalPassword" class="form-label"
+                  >Senha Inicial</label
+                >
+                <div class="input-group">
+                  <input
+                    type="password"
+                    class="form-control"
+                    id="modalPassword"
+                    placeholder="Senha temporária"
+                    required
+                    minlength="6"
+                  />
+                  <button
+                    class="btn btn-outline-secondary"
+                    type="button"
+                    onclick="generateRandomPassword()"
+                  >
+                    <i class="fas fa-dice"></i>
+                  </button>
+                </div>
+                <div class="form-text">
+                  Mínimo 6 caracteres. O usuário deverá alterar no primeiro
+                  login.
+                </div>
+              </div>
+              <div class="mb-3">
+                <label for="modalRole" class="form-label"
+                  >Tipo de Usuário</label
+                >
+                <select id="modalRole" class="form-select">
+                  <option value="user" selected>Usuário</option>
+                  <option value="admin">Administrador</option>
+                </select>
+              </div>
+              <div class="mb-3">
+                <div class="form-check">
+                  <input
+                    class="form-check-input"
+                    type="checkbox"
+                    id="forcePasswordChange"
+                    checked
+                  />
+                  <label class="form-check-label" for="forcePasswordChange">
+                    Forçar alteração de senha no primeiro login
+                  </label>
+                </div>
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              onclick="createUserFromModal()"
+            >
+              <i class="fas fa-save me-1"></i>
+              Criar Usuário
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal para configurações de usuário -->
+    <div
+      class="modal fade"
+      id="userConfigModal"
+      tabindex="-1"
+      aria-labelledby="userConfigModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="userConfigModalLabel">
+              <i class="fas fa-cog me-2"></i>
+              Configurações do Usuário
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <div class="row mb-3">
+              <div class="col-12">
+                <div class="alert alert-info">
+                  <i class="fas fa-info-circle me-2"></i>
+                  Configure as credenciais da Evolution API para o usuário
+                  <strong id="configUserName"></strong>
+                </div>
+              </div>
+            </div>
+            <form id="userConfigForm">
+              <input type="hidden" id="configUserId" />
+              <div class="row">
+                <div class="col-md-6 mb-3">
+                  <label for="configApiUrl" class="form-label"
+                    >Evolution API URL</label
+                  >
+                  <input
+                    type="url"
+                    class="form-control"
+                    id="configApiUrl"
+                    placeholder="http://localhost:8080"
+                    required
+                  />
+                </div>
+                <div class="col-md-6 mb-3">
+                  <label for="configInstance" class="form-label"
+                    >Nome da Instância</label
+                  >
+                  <input
+                    type="text"
+                    class="form-control"
+                    id="configInstance"
+                    placeholder="default"
+                    required
+                  />
+                </div>
+              </div>
+              <div class="mb-3">
+                <label for="configToken" class="form-label">API Key</label>
+                <div class="input-group">
+                  <input
+                    type="password"
+                    class="form-control"
+                    id="configToken"
+                    placeholder="Sua API Key"
+                    required
+                  />
+                  <button
+                    class="btn btn-outline-secondary"
+                    type="button"
+                    onclick="togglePasswordVisibility('configToken')"
+                  >
+                    <i class="fas fa-eye" id="configTokenIcon"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="mb-3">
+                <button
+                  type="button"
+                  class="btn btn-outline-info btn-sm"
+                  onclick="testUserConnection()"
+                >
+                  <i class="fas fa-wifi me-1"></i>
+                  Testar Conexão
+                </button>
+              </div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              class="btn btn-primary"
+              onclick="saveUserConfigFromModal()"
+            >
+              <i class="fas fa-save me-1"></i>
+              Salvar Configuração
+            </button>
+          </div>
+        </div>
       </div>
     </div>
 
