@@ -17,6 +17,16 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
+// Middleware para prevenir cache nas APIs
+app.use("/api", (req, res, next) => {
+  res.set({
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    Pragma: "no-cache",
+    Expires: "0",
+  });
+  next();
+});
+
 // Configuração de sessão
 app.use(
   session({
@@ -32,13 +42,6 @@ app.use(
   })
 );
 
-// Inicializar banco de dados
-let config = {
-  evolutionApiUrl: "http://localhost:8080",
-  token: "",
-  instanceName: "default",
-};
-
 // Cache em memória para lista de grupos da Evolution API
 const GROUPS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
 let groupsCache = {
@@ -46,25 +49,38 @@ let groupsCache = {
   fetchedAt: 0,
 };
 
-// Carregar configurações do banco
-async function loadConfig() {
-  try {
-    config = await db.getConfig();
-  } catch (error) {
-    console.log("Erro ao carregar configurações:", error.message);
-  }
-}
-
 // Função para enviar mensagem via Evolution API
-async function sendMessage(phone, message) {
+async function sendMessage(phone, message, userId) {
   try {
     console.log(`Tentando enviar mensagem para ${phone}`);
+
+    // Obter instância do usuário
+    const userInstance = await db.getUserInstanceData(userId);
+    if (!userInstance?.instance_name) {
+      return {
+        success: false,
+        error:
+          "Nenhuma instância configurada. Configure uma instância primeiro.",
+      };
+    }
+
+    // Obter configuração global da Evolution API
+    const config = await db.getGlobalConfig();
+    if (!config) {
+      return {
+        success: false,
+        error: "Configuração da Evolution API não encontrada.",
+      };
+    }
+
     // Codificar o nome da instância para URL (espaços viram %20)
-    const encodedInstance = encodeURIComponent(config.instanceName);
+    const encodedInstance = encodeURIComponent(userInstance.instance_name);
     console.log(
-      `URL: ${config.evolutionApiUrl}/message/sendText/${encodedInstance}`
+      `URL: ${config.evolution_api_url}/message/sendText/${encodedInstance}`
     );
-    console.log(`API Key: ${config.token ? "Presente" : "Ausente"}`);
+    console.log(
+      `API Key: ${config.evolution_api_token ? "Presente" : "Ausente"}`
+    );
 
     // Estrutura correta conforme documentação da Evolution API
     const payload = {
@@ -78,12 +94,12 @@ async function sendMessage(phone, message) {
     console.log("Payload:", JSON.stringify(payload, null, 2));
 
     const response = await axios.post(
-      `${config.evolutionApiUrl}/message/sendText/${encodedInstance}`,
+      `${config.evolution_api_url}/message/sendText/${encodedInstance}`,
       payload,
       {
         headers: {
           "Content-Type": "application/json",
-          apikey: config.token, // Header correto conforme documentação
+          apikey: config.evolution_api_token, // Header correto conforme documentação
         },
         timeout: 10000, // 10 segundos de timeout
       }
@@ -108,16 +124,16 @@ async function sendMessage(phone, message) {
       }
     } else if (error.response?.status === 401) {
       errorMessage =
-        "API Key inválida ou não autorizada. Verifique suas credenciais na seção Configuração.";
+        "API Key inválida ou não autorizada. Verifique suas credenciais na seção Instâncias.";
     } else if (error.response?.status === 404) {
       errorMessage =
-        "Instância não encontrada. Verifique o nome da instância na seção Configuração.";
+        "Instância não encontrada. Verifique o nome da instância na seção Instâncias.";
     } else if (error.code === "ECONNREFUSED") {
       errorMessage =
         "Não foi possível conectar à Evolution API. Verifique se ela está rodando.";
     } else if (error.code === "ENOTFOUND") {
       errorMessage =
-        "URL da Evolution API não encontrada. Verifique a URL na seção Configuração.";
+        "URL da Evolution API não encontrada. Verifique a URL na seção Instâncias.";
     }
 
     return { success: false, error: errorMessage };
@@ -135,7 +151,7 @@ cron.schedule("* * * * *", async () => {
       if (moment(msg.scheduledTime).isSameOrBefore(now) && !msg.sent) {
         console.log(`Enviando mensagem agendada: ${msg.id}`);
 
-        const result = await sendMessage(msg.phone, msg.message);
+        const result = await sendMessage(msg.phone, msg.message, msg.user_id);
 
         if (result.success) {
           await db.updateMessageStatus(
@@ -203,14 +219,463 @@ app.post("/api/logout", (req, res) => {
 });
 
 // Rota para verificar se está autenticado
-app.get("/api/auth/status", (req, res) => {
-  res.json({
-    authenticated: req.session.authenticated || false,
-    user: req.session.user || null,
-  });
+app.get("/api/auth/status", async (req, res) => {
+  try {
+    if (req.session.authenticated && req.session.user) {
+      // Verificar se o usuário precisa alterar a senha
+      const forcePasswordChange = await db.checkForcePasswordChange(
+        req.session.user.id
+      );
+      res.json({
+        authenticated: true,
+        user: {
+          ...req.session.user,
+          forcePasswordChange,
+        },
+      });
+    } else {
+      res.json({
+        authenticated: false,
+        user: null,
+      });
+    }
+  } catch (error) {
+    console.error("Erro ao verificar status de autenticação:", error);
+    res.json({
+      authenticated: req.session.authenticated || false,
+      user: req.session.user || null,
+    });
+  }
 });
 
 // Rotas da API (protegidas)
+
+// Admin - Testar configuração da Evolution API
+app.post("/api/admin/config/test", requireAdmin, async (req, res) => {
+  try {
+    const { evolution_api_url, evolution_api_token } = req.body;
+    if (!evolution_api_url || !evolution_api_token) {
+      return res.status(400).json({ error: "URL e token são obrigatórios" });
+    }
+
+    // Testar conexão com a Evolution API
+    try {
+      const baseUrl = evolution_api_url.replace(/\/+$/, "");
+      const response = await axios.get(`${baseUrl}/instance/fetchInstances`, {
+        headers: {
+          apikey: evolution_api_token,
+          "Content-Type": "application/json",
+        },
+        timeout: 5000,
+      });
+
+      if (response.status !== 200) {
+        return res
+          .status(400)
+          .json({ error: "Falha na conexão com a Evolution API" });
+      }
+
+      res.json({
+        success: true,
+        message: "Conexão estabelecida com sucesso",
+        instances: response.data,
+      });
+    } catch (error) {
+      console.error("Erro ao testar Evolution API:", error);
+      return res.status(400).json({
+        error: "Falha na conexão com a Evolution API",
+        details: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Erro ao testar configuração:", error);
+    res.status(500).json({ error: "Erro interno do servidor" });
+  }
+});
+
+// Admin - Configuração global da Evolution API
+app.get("/api/admin/config", requireAdmin, async (req, res) => {
+  try {
+    const config = await db.getGlobalConfig();
+    res.json(config || {});
+  } catch (error) {
+    console.error("Erro ao obter configuração global:", error);
+    res.status(500).json({ error: "Erro interno do servidor" });
+  }
+});
+
+app.post("/api/admin/config", requireAdmin, async (req, res) => {
+  try {
+    const { evolution_api_url, evolution_api_token } = req.body;
+    if (!evolution_api_url || !evolution_api_token) {
+      return res.status(400).json({ error: "URL e token são obrigatórios" });
+    }
+
+    // Testar conexão com a Evolution API
+    try {
+      console.log("Testando conexão com Evolution API:", evolution_api_url);
+
+      // Primeiro tenta um health check
+      try {
+        // Garantir que a URL não termine com barra
+        const baseUrl = evolution_api_url.replace(/\/+$/, "");
+
+        const pingResponse = await axios.get(`${baseUrl}/`, {
+          headers: {
+            apikey: evolution_api_token,
+            "Content-Type": "application/json",
+          },
+          timeout: 5000,
+        });
+
+        console.log(
+          "Resposta do ping:",
+          pingResponse.status,
+          pingResponse.data
+        );
+
+        if (pingResponse.status !== 200) {
+          return res
+            .status(400)
+            .json({ error: "Evolution API não está respondendo" });
+        }
+      } catch (pingError) {
+        console.error(
+          "Erro no ping:",
+          pingError.response?.data || pingError.message
+        );
+        return res.status(400).json({
+          error: "Evolution API não está acessível",
+          details: pingError.response?.data?.error || pingError.message,
+        });
+      }
+
+      // Se o health check funcionou, tenta listar as instâncias
+      try {
+        // Garantir que a URL não termine com barra
+        const baseUrl = evolution_api_url.replace(/\/+$/, "");
+        const response = await axios.get(`${baseUrl}/instance/fetchInstances`, {
+          headers: {
+            apikey: evolution_api_token,
+            "Content-Type": "application/json",
+          },
+          timeout: 5000,
+        });
+
+        console.log(
+          "Resposta do fetchInstances:",
+          response.status,
+          response.data
+        );
+
+        if (response.status !== 200) {
+          return res
+            .status(400)
+            .json({ error: "Falha ao listar instâncias na Evolution API" });
+        }
+
+        return res.json({
+          success: true,
+          message: "Conexão estabelecida com sucesso",
+          instances: response.data,
+        });
+      } catch (instancesError) {
+        console.error(
+          "Erro ao listar instâncias:",
+          instancesError.response?.data || instancesError.message
+        );
+        return res.status(400).json({
+          error: "Falha ao listar instâncias",
+          details:
+            instancesError.response?.data?.error || instancesError.message,
+        });
+      }
+    } catch (error) {
+      console.error("Erro geral ao testar Evolution API:", error);
+      return res.status(400).json({
+        error: "Falha na conexão com a Evolution API",
+        details: error.response?.data?.error || error.message,
+      });
+    }
+
+    await db.saveGlobalConfig({ evolution_api_url, evolution_api_token });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Erro ao salvar configuração global:", error);
+    res.status(500).json({ error: "Erro interno do servidor" });
+  }
+});
+
+// Usuário - Gerenciar instância
+app.get("/api/instance", requireAuth, async (req, res) => {
+  try {
+    console.log("Buscando instância para usuário ID:", req.session.user.id);
+    const instance = await db.getUserInstanceData(req.session.user.id);
+    console.log("Instância encontrada no banco:", instance);
+
+    if (!instance?.instance_name) {
+      console.log("Nenhuma instância encontrada, retornando not_created");
+      return res.json({
+        instance_name: null,
+        instance_connected: false,
+        instance_qr_code: null,
+        instance_status: "not_created",
+      });
+    }
+
+    // Obter configuração global
+    const config = await db.getGlobalConfig();
+    if (!config) {
+      return res.json(instance);
+    }
+
+    // Verificar status na Evolution API
+    try {
+      const response = await axios.get(
+        `${config.evolution_api_url}/instance/connectionState/${instance.instance_name}`,
+        {
+          headers: {
+            apikey: config.evolution_api_token,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.status === 200) {
+        console.log(
+          "Resposta da Evolution API connectionState:",
+          JSON.stringify(response.data, null, 2)
+        );
+
+        // A Evolution API retorna o status em diferentes formatos dependendo da versão
+        // Vamos tentar múltiplos caminhos possíveis
+        const status =
+          response.data.instance?.state ||
+          response.data.instance?.status ||
+          response.data.state ||
+          response.data.status ||
+          "disconnected";
+
+        const connected =
+          status === "CONNECTED" ||
+          status === "OPEN" ||
+          status === "open" ||
+          status === "connected";
+
+        console.log("Status extraído:", status, "Conectado:", connected);
+
+        // Atualizar status no banco
+        await db.updateUserInstance(req.session.user.id, {
+          ...instance,
+          instance_connected: connected,
+          instance_status: status,
+        });
+
+        // Retornar dados atualizados
+        const responseData = {
+          ...instance,
+          instance_connected: connected,
+          instance_status: status,
+        };
+        console.log(
+          "Retornando dados da instância:",
+          JSON.stringify(responseData, null, 2)
+        );
+        res.json(responseData);
+      } else {
+        res.json(instance);
+      }
+    } catch (error) {
+      console.error("Erro ao verificar status na Evolution API:", error);
+      // Retornar dados do banco mesmo com erro na API
+      res.json(instance);
+    }
+  } catch (error) {
+    console.error("Erro ao obter instância:", error);
+    res.status(500).json({ error: "Erro interno do servidor" });
+  }
+});
+
+app.post("/api/instance/create", requireAuth, async (req, res) => {
+  try {
+    // Verificar se já tem instância
+    const existingInstance = await db.getUserInstanceData(req.session.user.id);
+    if (existingInstance?.instance_name) {
+      return res.status(400).json({ error: "Usuário já possui uma instância" });
+    }
+
+    // Obter configuração global
+    const config = await db.getGlobalConfig();
+    if (!config) {
+      return res
+        .status(400)
+        .json({ error: "Configuração global não encontrada" });
+    }
+
+    // Gerar nome da instância
+    const instanceName = db.generateInstanceName(req.session.user.username);
+
+    // Criar instância na Evolution API
+    try {
+      // Garantir que a URL não termine com barra
+      const baseUrl = config.evolution_api_url.replace(/\/+$/, "");
+
+      console.log("Criando instância na Evolution API:", {
+        url: baseUrl,
+        instanceName,
+      });
+
+      // Primeiro verifica se a instância já existe
+      try {
+        const checkResponse = await axios.get(
+          `${baseUrl}/instance/connectionState/${instanceName}`,
+          {
+            headers: {
+              apikey: config.evolution_api_token,
+              "Content-Type": "application/json",
+            },
+          }
+        );
+
+        console.log("Estado da instância:", checkResponse.data);
+
+        if (checkResponse.status === 200) {
+          // Se a instância existe, deleta primeiro
+          await axios.delete(`${baseUrl}/instance/delete/${instanceName}`, {
+            headers: {
+              apikey: config.evolution_api_token,
+              "Content-Type": "application/json",
+            },
+          });
+          console.log("Instância existente deletada");
+        }
+      } catch (checkError) {
+        // Ignora erro 404 (instância não existe)
+        if (checkError.response?.status !== 404) {
+          console.error(
+            "Erro ao verificar instância:",
+            checkError.response?.data || checkError.message
+          );
+        }
+      }
+
+      // Cria a nova instância
+      const response = await axios.post(
+        `${baseUrl}/instance/create`,
+        {
+          instanceName,
+          integration: "WHATSAPP-BAILEYS",
+          qrcode: true,
+        },
+        {
+          headers: {
+            apikey: config.evolution_api_token,
+            "Content-Type": "application/json",
+          },
+          timeout: 30000, // 30 segundos
+        }
+      );
+
+      console.log("Resposta da criação:", response.status, response.data);
+
+      if (response.status !== 201 && response.status !== 200) {
+        throw new Error(
+          `Falha ao criar instância na Evolution API: ${
+            response.data?.error || response.statusText
+          }`
+        );
+      }
+
+      // Salvar instância no banco
+      const instanceStatus = response.data.instance?.status || "connecting";
+      console.log("Status da instância criada:", instanceStatus);
+      console.log("Salvando instância para usuário ID:", req.session.user.id);
+
+      await db.updateUserInstance(req.session.user.id, {
+        instance_name: instanceName,
+        instance_connected: false,
+        instance_qr_code: response.data.qrcode?.base64 || "",
+        instance_status: instanceStatus,
+      });
+
+      console.log("Instância salva no banco com sucesso");
+
+      return res.json({
+        success: true,
+        instanceName,
+        qrCode: response.data.qrcode.base64,
+      });
+    } catch (error) {
+      console.error(
+        "Erro ao criar instância na Evolution API:",
+        error.response?.data || error
+      );
+      return res.status(400).json({
+        error: "Falha ao criar instância na Evolution API",
+        details: error.response?.data?.error || error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Erro ao criar instância:", error);
+    res.status(500).json({ error: "Erro interno do servidor" });
+  }
+});
+
+app.get("/api/instance/status", requireAuth, async (req, res) => {
+  try {
+    // Obter instância do usuário
+    const instance = await db.getUserInstanceData(req.session.user.id);
+    if (!instance?.instance_name) {
+      return res.status(400).json({ error: "Instância não encontrada" });
+    }
+
+    // Obter configuração global
+    const config = await db.getGlobalConfig();
+    if (!config) {
+      return res
+        .status(400)
+        .json({ error: "Configuração global não encontrada" });
+    }
+
+    // Verificar status na Evolution API
+    try {
+      const response = await axios.get(
+        `${config.evolution_api_url}/instance/connectionState/${instance.instance_name}`,
+        {
+          headers: {
+            apikey: config.evolution_api_token,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      if (response.status !== 200) {
+        throw new Error("Falha ao obter status");
+      }
+
+      const status = response.data.instance?.state;
+      const connected = status === "CONNECTED" || status === "OPEN";
+
+      // Atualizar status no banco
+      await db.updateUserInstance(req.session.user.id, {
+        ...instance,
+        instance_connected: connected,
+        instance_status: status,
+      });
+
+      res.json({ status, connected });
+    } catch (error) {
+      console.error("Erro ao obter status:", error);
+      return res.status(400).json({
+        error: "Falha ao obter status",
+        details: error.message,
+      });
+    }
+  } catch (error) {
+    console.error("Erro ao obter status:", error);
+    res.status(500).json({ error: "Erro interno do servidor" });
+  }
+});
 
 // Admin - Gerenciar usuários
 app.get("/api/admin/users", requireAdmin, async (req, res) => {
@@ -225,11 +690,9 @@ app.get("/api/admin/users", requireAdmin, async (req, res) => {
 
 app.post("/api/admin/users", requireAdmin, async (req, res) => {
   try {
-    const { username, password, role, forcePasswordChange } = req.body;
-    if (!username || !password) {
-      return res
-        .status(400)
-        .json({ error: "username e password são obrigatórios" });
+    const { username, role, forcePasswordChange } = req.body;
+    if (!username) {
+      return res.status(400).json({ error: "username é obrigatório" });
     }
 
     // Validações extras
@@ -237,11 +700,6 @@ app.post("/api/admin/users", requireAdmin, async (req, res) => {
       return res
         .status(400)
         .json({ error: "Username deve ter pelo menos 3 caracteres" });
-    }
-    if (password.length < 6) {
-      return res
-        .status(400)
-        .json({ error: "Password deve ter pelo menos 6 caracteres" });
     }
     if (role && !["user", "admin"].includes(role)) {
       return res.status(400).json({ error: "Role deve ser 'user' ou 'admin'" });
@@ -253,13 +711,25 @@ app.post("/api/admin/users", requireAdmin, async (req, res) => {
       return res.status(400).json({ error: "Username já existe" });
     }
 
+    // Gerar senha aleatória
+    const chars =
+      "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
+    let password = "";
+    for (let i = 0; i < 12; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+
     const user = await db.createUser(
       username,
       password,
       role || "user",
-      forcePasswordChange
+      true // Sempre forçar mudança de senha no primeiro login
     );
-    res.status(201).json(user);
+
+    res.status(201).json({
+      ...user,
+      temporaryPassword: password,
+    });
   } catch (error) {
     console.error("Erro ao criar usuário:", error);
     res
@@ -349,77 +819,6 @@ app.put("/api/admin/users/:id/password", requireAdmin, async (req, res) => {
   }
 });
 
-// Admin - Configuração por usuário
-app.get("/api/admin/users/:id/config", requireAdmin, async (req, res) => {
-  try {
-    const targetUserId = parseInt(req.params.id, 10);
-    const config = await db.getUserConfig(targetUserId);
-    res.json(config);
-  } catch (error) {
-    console.error("Erro ao obter config do usuário:", error);
-    res.status(400).json({ error: "Falha ao obter configuração" });
-  }
-});
-
-app.post("/api/admin/users/:id/config", requireAdmin, async (req, res) => {
-  try {
-    const targetUserId = parseInt(req.params.id, 10);
-    const { evolutionApiUrl, token, instanceName } = req.body;
-    if (!evolutionApiUrl || !token || !instanceName) {
-      return res.status(400).json({ error: "Campos obrigatórios ausentes" });
-    }
-    await db.saveUserConfig(targetUserId, {
-      evolutionApiUrl,
-      token,
-      instanceName,
-    });
-    res.json({ success: true });
-  } catch (error) {
-    console.error("Erro ao salvar config do usuário:", error);
-    res.status(400).json({ error: "Falha ao salvar configuração" });
-  }
-});
-
-// POST - Testar conexão da Evolution API para um usuário
-app.post(
-  "/api/admin/users/:id/test-connection",
-  requireAdmin,
-  async (req, res) => {
-    try {
-      const targetUserId = parseInt(req.params.id, 10);
-      const { evolutionApiUrl, token, instanceName } = req.body;
-
-      if (!evolutionApiUrl || !token || !instanceName) {
-        return res.status(400).json({ error: "Campos obrigatórios ausentes" });
-      }
-
-      // Testar conexão com a Evolution API
-      const encodedInstance = encodeURIComponent(instanceName);
-      const testUrl = `${evolutionApiUrl}/instance/fetchInstances`;
-
-      const response = await axios.get(testUrl, {
-        headers: {
-          "Content-Type": "application/json",
-          apikey: token,
-        },
-        timeout: 10000,
-      });
-
-      if (response.status === 200) {
-        res.json({ success: true, message: "Conexão testada com sucesso" });
-      } else {
-        res.status(400).json({ error: "Falha na conexão com a Evolution API" });
-      }
-    } catch (error) {
-      console.error("Erro ao testar conexão:", error);
-      res.status(400).json({
-        error: "Falha na conexão",
-        details: error.response?.data || error.message,
-      });
-    }
-  }
-);
-
 // Admin - Estatísticas do sistema
 app.get("/api/admin/stats", requireAdmin, async (req, res) => {
   try {
@@ -471,6 +870,14 @@ app.post("/api/messages", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Todos os campos são obrigatórios" });
   }
 
+  // Verificar se há uma instância configurada
+  const userInstance = await db.getUserInstanceData(req.session.user.id);
+  if (!userInstance?.instance_name) {
+    return res.status(400).json({
+      error: "Nenhuma instância configurada. Configure uma instância primeiro.",
+    });
+  }
+
   // Aceitar JID de grupo (termina com @g.us) ou número limpo (10-15 dígitos)
   let destination = phone;
   if (typeof phone === "string" && phone.includes("@g.us")) {
@@ -495,6 +902,7 @@ app.post("/api/messages", requireAuth, async (req, res) => {
     createdAt: new Date().toISOString(),
     sent: false,
     userId: req.session.user.id,
+    instanceId: null, // Não precisamos do instanceId para o sistema atual
   };
 
   console.log("Mensagem a ser salva:", newMessage);
@@ -525,53 +933,136 @@ app.delete("/api/messages/:id", requireAuth, async (req, res) => {
   }
 });
 
-// GET - Obter configurações (por usuário)
-app.get("/api/config", requireAuth, async (req, res) => {
+// GET - Obter instâncias do usuário
+app.get("/api/instances", requireAuth, async (req, res) => {
   try {
-    const config = await db.getUserConfig(req.session.user.id);
-    res.json(config);
+    const instances = await db.getUserInstances(req.session.user.id);
+    res.json(instances);
   } catch (error) {
-    console.error("Erro ao buscar configurações:", error);
+    console.error("Erro ao buscar instâncias:", error);
     res.status(500).json({ error: "Erro interno do servidor" });
   }
 });
 
-// POST - Salvar configurações (por usuário)
-app.post("/api/config", requireAuth, async (req, res) => {
-  const { evolutionApiUrl, token, instanceName } = req.body;
+// GET - Obter instância específica
+app.get("/api/instances/:id", requireAuth, async (req, res) => {
+  try {
+    const instanceId = parseInt(req.params.id, 10);
+    const instance = await db.getUserInstance(req.session.user.id, instanceId);
+    if (!instance) {
+      return res.status(404).json({ error: "Instância não encontrada" });
+    }
+    res.json(instance);
+  } catch (error) {
+    console.error("Erro ao buscar instância:", error);
+    res.status(500).json({ error: "Erro interno do servidor" });
+  }
+});
 
-  if (!evolutionApiUrl || !token || !instanceName) {
+// POST - Criar nova instância
+app.post("/api/instances", requireAuth, async (req, res) => {
+  const { name, evolutionApiUrl, token, instanceName } = req.body;
+
+  if (!name || !evolutionApiUrl || !token || !instanceName) {
     return res.status(400).json({ error: "Todos os campos são obrigatórios" });
   }
 
   try {
-    await db.saveUserConfig(req.session.user.id, {
+    const newInstance = await db.createUserInstance(req.session.user.id, {
+      name,
       evolutionApiUrl,
       token,
       instanceName,
     });
-    await loadConfig(); // Recarregar configurações globais (mantido)
-    res.json({ evolutionApiUrl, token, instanceName });
+    res.status(201).json(newInstance);
   } catch (error) {
-    console.error("Erro ao salvar configurações:", error);
+    console.error("Erro ao criar instância:", error);
+    res.status(500).json({ error: "Erro interno do servidor" });
+  }
+});
+
+// PUT - Atualizar instância
+app.put("/api/instances/:id", requireAuth, async (req, res) => {
+  try {
+    const instanceId = parseInt(req.params.id, 10);
+    const { name, evolutionApiUrl, token, instanceName } = req.body;
+
+    if (!name || !evolutionApiUrl || !token || !instanceName) {
+      return res
+        .status(400)
+        .json({ error: "Todos os campos são obrigatórios" });
+    }
+
+    await db.updateUserInstance(req.session.user.id, instanceId, {
+      name,
+      evolutionApiUrl,
+      token,
+      instanceName,
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Erro ao atualizar instância:", error);
+    res.status(500).json({ error: "Erro interno do servidor" });
+  }
+});
+
+// DELETE - Deletar instância
+app.delete("/api/instances/:id", requireAuth, async (req, res) => {
+  try {
+    const instanceId = parseInt(req.params.id, 10);
+    await db.deleteUserInstance(req.session.user.id, instanceId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Erro ao deletar instância:", error);
+    res.status(500).json({ error: "Erro interno do servidor" });
+  }
+});
+
+// POST - Definir instância ativa
+app.post("/api/instances/:id/activate", requireAuth, async (req, res) => {
+  try {
+    const instanceId = parseInt(req.params.id, 10);
+    await db.setActiveInstance(req.session.user.id, instanceId);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Erro ao ativar instância:", error);
+    res.status(500).json({ error: "Erro interno do servidor" });
+  }
+});
+
+// GET - Obter instância ativa
+app.get("/api/instances/active", requireAuth, async (req, res) => {
+  try {
+    const userInstance = await db.getUserInstanceData(req.session.user.id);
+    res.json(userInstance);
+  } catch (error) {
+    console.error("Erro ao buscar instância ativa:", error);
     res.status(500).json({ error: "Erro interno do servidor" });
   }
 });
 
 // POST - Testar conexão com Evolution API
-app.post("/api/test-connection", requireAuth, async (req, res) => {
+app.post("/api/evolution/test", requireAuth, async (req, res) => {
   try {
+    const { evolutionApiUrl, token, instanceName } = req.body;
+
+    if (!evolutionApiUrl || !token || !instanceName) {
+      return res
+        .status(400)
+        .json({ error: "Todos os campos são obrigatórios" });
+    }
+
     console.log("Testando conexão com Evolution API...");
-    console.log("URL:", config.evolutionApiUrl);
-    console.log("Instância:", config.instanceName);
-    console.log("API Key presente:", !!config.token);
+    console.log("URL:", evolutionApiUrl);
+    console.log("Instância:", instanceName);
+    console.log("API Key presente:", !!token);
 
     // Teste simples de conectividade usando a API correta
     const response = await axios.get(
-      `${config.evolutionApiUrl}/instance/fetchInstances`,
+      `${evolutionApiUrl}/instance/fetchInstances`,
       {
         headers: {
-          apikey: config.token, // Header correto conforme documentação
+          apikey: token, // Header correto conforme documentação
           "Content-Type": "application/json",
         },
         timeout: 5000,
@@ -599,591 +1090,138 @@ app.post("/api/test-connection", requireAuth, async (req, res) => {
   }
 });
 
-// GET - Limpar cache e verificar configuração
-app.get("/api/config/clear-cache", requireAuth, async (req, res) => {
-  try {
-    // Forçar recarregamento das configurações
-    await loadConfig();
-    res.json({ success: true, message: "Cache limpo com sucesso" });
-  } catch (error) {
-    res.status(500).json({ error: "Erro ao limpar cache" });
-  }
-});
+// Funções complexas removidas - processamento simplificado
 
-// GET - Verificar status da configuração
-app.get("/api/config/status", requireAuth, async (req, res) => {
-  try {
-    const userConfig = await db.getUserConfig(req.session.user.id);
-    const hasConfig = !!(
-      userConfig.evolutionApiUrl &&
-      userConfig.instanceName &&
-      userConfig.token
-    );
-    res.json({
-      hasConfig,
-      evolutionApiUrl: userConfig.evolutionApiUrl || null,
-      instanceName: userConfig.instanceName || null,
-      hasToken: !!userConfig.token,
-    });
-  } catch (error) {
-    res.status(500).json({ error: "Erro ao verificar configuração" });
-  }
-});
+// Funções de normalização removidas - processamento simplificado na rota /api/chats
 
-// Função para deduplicar contatos
-function deduplicateChats(chats) {
-  console.log("Deduplicando chats...");
-  const uniqueChats = new Map();
-
-  chats.forEach((chat, index) => {
-    const key = chat.id || chat.remoteJid || chat.chatId;
-    if (key && !uniqueChats.has(key)) {
-      uniqueChats.set(key, chat);
-    } else if (key) {
-      console.log(`Chat duplicado removido: ${chat.name} (${key})`);
-    }
-  });
-
-  const deduplicatedChats = Array.from(uniqueChats.values());
-  console.log(
-    `Deduplicação: ${chats.length} -> ${deduplicatedChats.length} chats`
-  );
-  return deduplicatedChats;
-}
-
-// Função para formatar nomes de contatos
-function formatContactName(chat) {
-  // Heurística de grupo
-  const isGroup =
-    (chat.type && String(chat.type).toLowerCase() === "group") ||
-    (chat.id && chat.id.includes("@g.us"));
-
-  if (isGroup) {
-    return chat.name && chat.name !== "Sem nome" ? chat.name : "Grupo sem nome";
-  }
-
-  // Tentar extrair número de telefone do id
-  const rawId = chat.id || "";
-  let phoneNumber = null;
-  if (rawId.includes("@s.whatsapp.net")) {
-    phoneNumber = rawId.split("@")[0];
-  } else {
-    const digits = (rawId.match(/\d+/g) || []).join("");
-    if (digits.length >= 10 && digits.length <= 15) {
-      phoneNumber = digits;
-    }
-  }
-
-  // Se já tem um nome, checar se não é um id opaco igual ao id
-  const nameCandidate = chat.name || "";
-  const looksOpaqueId =
-    !nameCandidate.includes(" ") &&
-    /[a-zA-Z]/.test(nameCandidate) &&
-    nameCandidate.length >= 16 &&
-    nameCandidate === rawId;
-
-  if (nameCandidate && nameCandidate !== "Sem nome" && !looksOpaqueId) {
-    return nameCandidate;
-  }
-
-  // Usar telefone se disponível
-  if (phoneNumber) {
-    if (phoneNumber.length === 13 && phoneNumber.startsWith("55")) {
-      return `+${phoneNumber.substring(0, 2)} (${phoneNumber.substring(
-        2,
-        4
-      )}) ${phoneNumber.substring(4, 9)}-${phoneNumber.substring(9)}`;
-    }
-    return phoneNumber;
-  }
-
-  // Fallback
-  return "Contato sem nome";
-}
-
-// Função para ordenar chats por atividade
-function sortChatsByActivity(chats) {
-  return chats.sort((a, b) => {
-    const dateA = a.updatedAt ? new Date(a.updatedAt) : new Date(0);
-    const dateB = b.updatedAt ? new Date(b.updatedAt) : new Date(0);
-    return dateB - dateA; // Mais recente primeiro
-  });
-}
-
-// Função auxiliar para validar e normalizar dados da Evolution API v2
-function normalizeEvolutionV2Data(data) {
-  console.log("Normalizando dados da Evolution API v2:", data);
-
-  let chats = [];
-
-  // Verificar diferentes estruturas de resposta
-  if (Array.isArray(data)) {
-    chats = data;
-  } else if (data && typeof data === "object") {
-    if (Array.isArray(data.chats)) {
-      chats = data.chats;
-    } else if (Array.isArray(data.data)) {
-      chats = data.data;
-    } else if (Array.isArray(data.response)) {
-      chats = data.response;
-    } else if (Array.isArray(data.result)) {
-      chats = data.result;
-    } else if (data.chats && typeof data.chats === "object") {
-      // Se chats for um objeto com propriedades, converter para array
-      chats = Object.values(data.chats);
-    } else {
-      console.log("Estrutura de dados não reconhecida:", data);
-      return [];
-    }
-  }
-
-  console.log(`Extraídos ${chats.length} chats da resposta`);
-
-  // Normalizar cada chat
-  const normalizedChats = chats
-    .map((chat, index) => {
-      if (!chat || typeof chat !== "object") {
-        console.log(`Chat inválido no índice ${index}:`, chat);
-        return null;
-      }
-
-      // Extrair ID do chat (preferir remoteJid quando disponível, pois contém o domínio @)
-      const chatId =
-        chat.remoteJid || chat.id || chat.chatId || chat.jid || chat._id;
-      const remoteJid = chat.remoteJid || chat.jid || null;
-
-      // Determinar tipo (heurística mais robusta)
-      const rawIsGroupFlag =
-        chat.isGroup === true ||
-        chat.group === true ||
-        chat.isGroupChat === true ||
-        chat.isGroup?.toString?.() === "true" ||
-        typeof chat.participantsCount === "number" ||
-        Array.isArray(chat.participants) ||
-        !!chat.subject ||
-        (remoteJid && String(remoteJid).includes("@g.us"));
-
-      const isGroup =
-        rawIsGroupFlag || (chatId && String(chatId).includes("@g.us"));
-
-      // Extrair nome do chat
-      const rawChatName =
-        chat.name ||
-        chat.pushName ||
-        chat.subject ||
-        chat.title ||
-        chat.displayName ||
-        chat.contactName ||
-        chat.notifyName ||
-        (chatId && !isGroup && String(chatId).includes("@")
-          ? chatId.split("@")[0]
-          : "Sem nome");
-
-      // Extrair informações adicionais
-      const profilePic =
-        chat.profilePicUrl ||
-        chat.pictureUrl ||
-        chat.profilePic ||
-        chat.picture ||
-        chat.avatar ||
-        null;
-
-      const updatedAt =
-        chat.updatedAt ||
-        chat.timestamp ||
-        chat.lastMessageTimestamp ||
-        chat.lastActivity ||
-        chat.modifiedAt ||
-        null;
-
-      const normalizedChat = {
-        id: chatId,
-        name: rawChatName,
-        profilePicUrl: profilePic,
-        updatedAt: updatedAt,
-        type: isGroup ? "group" : "individual",
-      };
-
-      // Adicionar informações específicas de grupos
-      if (isGroup) {
-        normalizedChat.size =
-          chat.size || chat.participantsCount || chat.memberCount || null;
-        normalizedChat.owner =
-          chat.owner || chat.ownerId || chat.ownerJid || null;
-        normalizedChat.desc =
-          chat.desc || chat.description || chat.subject || null;
-      }
-
-      return normalizedChat;
-    })
-    .filter((chat) => chat && chat.id); // Filtrar apenas se houver ID
-
-  console.log(`Normalizados ${normalizedChats.length} chats válidos`);
-  return normalizedChats;
-}
-
-// Função auxiliar para normalizar grupos da Evolution API v2
-function normalizeEvolutionV2Groups(data) {
-  console.log("Normalizando dados de grupos da Evolution API v2:", data);
-
-  let groups = [];
-
-  if (Array.isArray(data)) {
-    groups = data;
-  } else if (data && typeof data === "object") {
-    if (Array.isArray(data.groups)) {
-      groups = data.groups;
-    } else if (Array.isArray(data.data)) {
-      groups = data.data;
-    } else if (Array.isArray(data.response)) {
-      groups = data.response;
-    } else if (Array.isArray(data.result)) {
-      groups = data.result;
-    } else {
-      groups = Object.values(data);
-    }
-  }
-
-  const normalized = groups
-    .map((g, index) => {
-      if (!g || typeof g !== "object") return null;
-      const rawId = g.id || g.jid || g.groupId;
-      if (!rawId) return null;
-      const id = String(rawId).includes("@") ? String(rawId) : `${rawId}@g.us`;
-
-      const name =
-        g.subject || g.name || g.title || g.displayName || "Grupo sem nome";
-      const profilePicUrl = g.pictureUrl || g.profilePicUrl || null;
-      const updatedAt = g.subjectTime || g.creation || null;
-
-      return {
-        id,
-        name,
-        profilePicUrl,
-        updatedAt,
-        type: "group",
-        size: g.size || null,
-        owner: g.owner || null,
-        desc: g.desc || null,
-      };
-    })
-    .filter((g) => g && g.id);
-
-  console.log(`Normalizados ${normalized.length} grupos válidos`);
-  return normalized;
-}
-
-// Função auxiliar para normalizar contatos (findContacts) da Evolution API v2
-function normalizeEvolutionV2Contacts(data) {
-  console.log(
-    "Normalizando dados de contatos (findContacts) da Evolution API v2:",
-    data
-  );
-
-  let items = [];
-
-  if (Array.isArray(data)) {
-    items = data;
-  } else if (data && typeof data === "object") {
-    if (Array.isArray(data.data)) {
-      items = data.data;
-    } else if (Array.isArray(data.response)) {
-      items = data.response;
-    } else if (Array.isArray(data.result)) {
-      items = data.result;
-    } else {
-      items = Object.values(data);
-    }
-  }
-
-  const normalized = items
-    .map((c) => {
-      if (!c || typeof c !== "object") return null;
-      const remoteJid = c.remoteJid || c.jid || null;
-      if (!remoteJid) return null;
-
-      const isGroup = String(remoteJid).includes("@g.us");
-
-      const nameCandidate =
-        c.pushName ||
-        c.name ||
-        c.subject ||
-        (remoteJid && !isGroup && String(remoteJid).includes("@")
-          ? String(remoteJid).split("@")[0]
-          : "Sem nome");
-
-      const profilePicUrl = c.profilePicUrl || c.pictureUrl || null;
-      const updatedAt = c.updatedAt || c.createdAt || null;
-
-      return {
-        id: remoteJid,
-        name: nameCandidate,
-        profilePicUrl,
-        updatedAt,
-        type: isGroup ? "group" : "individual",
-      };
-    })
-    .filter((i) => i && i.id);
-
-  console.log(`Normalizados ${normalized.length} itens de contatos válidos`);
-  return normalized;
-}
-
-// GET - Buscar conversas da Evolution API v2
+// GET - Buscar conversas/grupos da Evolution API v2
 app.get("/api/chats", requireAuth, async (req, res) => {
   try {
-    console.log("Buscando conversas da Evolution API v2...");
-    const userConfig = await db.getUserConfig(req.session.user.id);
-    console.log("Configuração atual:", {
-      evolutionApiUrl: userConfig.evolutionApiUrl,
-      instanceName: userConfig.instanceName,
-      hasToken: !!userConfig.token,
-    });
-
-    // Verificar se a configuração está completa
-    if (
-      !userConfig.evolutionApiUrl ||
-      !userConfig.instanceName ||
-      !userConfig.token
-    ) {
-      console.log("Configuração incompleta");
+    // Obter instância do usuário
+    const userInstance = await db.getUserInstanceData(req.session.user.id);
+    if (!userInstance?.instance_name) {
       return res.status(400).json({
         success: false,
         error:
-          "Configuração da Evolution API incompleta. Configure a API primeiro.",
+          "Nenhuma instância configurada. Configure uma instância primeiro.",
       });
     }
 
-    // Codificar o nome da instância para URL
-    const encodedInstance = encodeURIComponent(userConfig.instanceName);
-
-    // Pegar parâmetros de paginação
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 50;
-    const offset = (page - 1) * limit;
-
-    console.log(`Buscando página ${page} com ${limit} itens por página...`);
-
-    // Checar cache (a menos que o cliente peça refresh)
-    const refresh =
-      String(req.query.refresh || "false").toLowerCase() === "true";
-    const now = Date.now();
-    const cacheAge = now - groupsCache.fetchedAt;
-    if (
-      !refresh &&
-      groupsCache.items &&
-      groupsCache.items.length > 0 &&
-      cacheAge < GROUPS_CACHE_TTL_MS
-    ) {
-      console.log(
-        `Servindo grupos do cache (${
-          groupsCache.items.length
-        } itens, idade ${Math.round(cacheAge / 1000)}s)`
-      );
-      const totalFound = groupsCache.items.length;
-      return res.json({
-        success: true,
-        chats: groupsCache.items,
-        currentPage: 1,
-        hasMore: false,
-        totalInPage: totalFound,
-        totalFound,
-        cache: { ttlMs: GROUPS_CACHE_TTL_MS, ageMs: cacheAge },
+    // Obter configuração global da Evolution API
+    const config = await db.getGlobalConfig();
+    if (!config) {
+      return res.status(400).json({
+        success: false,
+        error: "Configuração da Evolution API não encontrada.",
       });
     }
 
-    try {
-      // Usar exclusivamente o endpoint de grupos: fetchAllGroups
-      const response = await axios.get(
-        `${userConfig.evolutionApiUrl}/group/fetchAllGroups/${encodedInstance}?getParticipants=false`,
-        {
-          headers: {
-            apikey: userConfig.token,
-          },
-          timeout: 60000,
-        }
-      );
+    const encodedInstance = encodeURIComponent(userInstance.instance_name);
+    const refresh = req.query.refresh === "true";
 
-      console.log(
-        "Resposta da Evolution API v2 (fetchAllGroups):",
-        response.status
-      );
-
-      if (!response.data) {
-        throw new Error("Resposta vazia da API");
+    // Verificar cache se não for refresh
+    if (!refresh && groupsCache && groupsCache.items) {
+      const cacheAge = Date.now() - groupsCache.fetchedAt;
+      if (cacheAge < GROUPS_CACHE_TTL_MS) {
+        return res.json({
+          success: true,
+          chats: groupsCache.items,
+          currentPage: 1,
+          hasMore: false,
+          totalInPage: groupsCache.items.length,
+          totalFound: groupsCache.items.length,
+          cache: { ttlMs: GROUPS_CACHE_TTL_MS, ageMs: cacheAge },
+        });
       }
-
-      // Normalizar grupos (subject -> name)
-      let allGroups = normalizeEvolutionV2Groups(response.data);
-
-      // Deduplicar, ordenar e formatar nomes
-      allGroups = deduplicateChats(allGroups);
-      allGroups = sortChatsByActivity(allGroups);
-      allGroups = allGroups.map((chat) => ({
-        ...chat,
-        name: formatContactName(chat),
-      }));
-
-      // Atualizar cache
-      groupsCache = {
-        items: allGroups,
-        fetchedAt: Date.now(),
-      };
-
-      // Sem paginação: retornar todos os grupos de uma vez
-      const totalFound = allGroups.length;
-      return res.json({
-        success: true,
-        chats: allGroups,
-        currentPage: 1,
-        hasMore: false,
-        totalInPage: totalFound,
-        totalFound,
-      });
-    } catch (apiError) {
-      console.error(
-        "Erro na chamada fetchAllGroups da Evolution API v2:",
-        apiError.message
-      );
-      console.error("Status:", apiError.response?.status);
-      console.error("Dados do erro:", apiError.response?.data);
-      throw apiError;
     }
+
+    console.log("Buscando grupos da Evolution API v2...");
+    console.log("Instância configurada:", {
+      instanceName: userInstance.instance_name,
+      evolutionApiUrl: config.evolution_api_url,
+      hasToken: !!config.evolution_api_token,
+    });
+
+    // Chamada simplificada para fetchAllGroups
+    const response = await axios.get(
+      `${config.evolution_api_url}/group/fetchAllGroups/${encodedInstance}?getParticipants=false`,
+      {
+        headers: {
+          apikey: config.evolution_api_token,
+        },
+        timeout: 30000, // Reduzido para 30 segundos
+      }
+    );
+
+    if (!response.data || !Array.isArray(response.data)) {
+      throw new Error("Resposta inválida da API - esperado array de grupos");
+    }
+
+    // Processamento simplificado dos grupos
+    const groups = response.data.map((group) => ({
+      id: group.id,
+      name: group.subject || `Grupo ${group.id}`,
+      isGroup: true,
+      lastActivity: group.creation
+        ? new Date(group.creation * 1000).toISOString()
+        : null,
+      size: group.size || 0,
+      owner: group.owner || null,
+      desc: group.desc || null,
+    }));
+
+    // Atualizar cache
+    groupsCache = {
+      items: groups,
+      fetchedAt: Date.now(),
+    };
+
+    console.log(`Encontrados ${groups.length} grupos`);
+
+    return res.json({
+      success: true,
+      chats: groups,
+      currentPage: 1,
+      hasMore: false,
+      totalInPage: groups.length,
+      totalFound: groups.length,
+    });
   } catch (error) {
-    console.error("Erro ao buscar conversas:", error.message);
+    console.error("Erro ao buscar grupos:", error.message);
     console.error("Detalhes do erro:", {
       status: error.response?.status,
       data: error.response?.data,
       code: error.code,
+      message: error.message,
     });
 
-    let errorMessage = "Erro ao buscar conversas";
+    let errorMessage = "Erro ao buscar grupos";
     if (error.response?.status === 401) {
       errorMessage = "API Key inválida ou não autorizada";
     } else if (error.response?.status === 404) {
-      errorMessage =
-        "Instância não encontrada. Verifique se o nome da instância está correto.";
+      errorMessage = "Instância não encontrada. Verifique o nome da instância.";
+    } else if (error.code === "ECONNABORTED") {
+      errorMessage = "Timeout na conexão com a Evolution API. Tente novamente.";
     } else if (error.code === "ECONNREFUSED") {
-      errorMessage = "Não foi possível conectar à Evolution API";
+      errorMessage =
+        "Não foi possível conectar à Evolution API. Verifique a URL.";
+    } else if (error.code === "ENOTFOUND") {
+      errorMessage = "URL da Evolution API não encontrada. Verifique a URL.";
     } else if (error.response?.data?.error) {
       errorMessage = error.response.data.error;
-    } else if (error.response?.data?.message) {
-      errorMessage = error.response.data.message;
+    } else if (error.message.includes("timeout")) {
+      errorMessage =
+        "Timeout na conexão com a Evolution API. A API pode estar sobrecarregada.";
     }
 
     res.status(400).json({
       success: false,
       error: errorMessage,
-      details: error.response?.data || error.message,
-    });
-  }
-});
-
-// GET - Testar conexão com Evolution API v2
-app.get("/api/evolution/test", requireAuth, async (req, res) => {
-  try {
-    console.log("Testando conexão com Evolution API v2...");
-
-    if (!config.evolutionApiUrl || !config.instanceName || !config.token) {
-      return res.status(400).json({
-        success: false,
-        error: "Configuração incompleta da Evolution API",
-      });
-    }
-
-    const encodedInstance = encodeURIComponent(config.instanceName);
-
-    // Testar primeiro o status da instância
-    try {
-      const instanceResponse = await axios.get(
-        `${config.evolutionApiUrl}/instance/fetchInstances`,
-        {
-          headers: {
-            apikey: config.token,
-            "Content-Type": "application/json",
-          },
-          timeout: 10000,
-        }
-      );
-
-      console.log("Status das instâncias:", instanceResponse.data);
-
-      // Verificar se a instância existe
-      const instances = Array.isArray(instanceResponse.data)
-        ? instanceResponse.data
-        : [];
-      const targetInstance = instances.find((inst) => {
-        const instanceName =
-          inst.instance?.instanceName || inst.instanceName || inst.name;
-        return instanceName === config.instanceName;
-      });
-
-      if (!targetInstance) {
-        return res.status(404).json({
-          success: false,
-          error: `Instância '${config.instanceName}' não encontrada`,
-          availableInstances: instances.map(
-            (inst) =>
-              inst.instance?.instanceName || inst.instanceName || inst.name
-          ),
-        });
-      }
-
-      // Testar o endpoint de chats
-      const chatsResponse = await axios.post(
-        `${config.evolutionApiUrl}/chat/findChats/${encodedInstance}`,
-        {
-          page: 1,
-          limit: 5,
-        },
-        {
-          headers: {
-            apikey: config.token,
-            "Content-Type": "application/json",
-          },
-          timeout: 10000,
-        }
-      );
-
-      const testChats = normalizeEvolutionV2Data(chatsResponse.data);
-
-      return res.json({
-        success: true,
-        message: "Conexão com Evolution API v2 estabelecida com sucesso",
-        instance: {
-          name: config.instanceName,
-          status: "connected",
-          foundChats: testChats.length,
-        },
-        apiInfo: {
-          url: config.evolutionApiUrl,
-          version: "v2",
-          hasToken: !!config.token,
-        },
-        testData: {
-          totalInstances: instances.length,
-          testChatsCount: testChats.length,
-        },
-      });
-    } catch (apiError) {
-      console.error("Erro ao testar Evolution API v2:", apiError.message);
-
-      return res.status(400).json({
-        success: false,
-        error: "Falha na conexão com Evolution API v2",
-        details: {
-          message: apiError.message,
-          status: apiError.response?.status,
-          data: apiError.response?.data,
-        },
-      });
-    }
-  } catch (error) {
-    console.error("Erro geral no teste:", error.message);
-    res.status(500).json({
-      success: false,
-      error: "Erro interno no teste de conexão",
-      details: error.message,
+      details: {
+        code: error.code,
+        status: error.response?.status,
+        message: error.message,
+      },
     });
   }
 });
@@ -1194,10 +1232,8 @@ app.post("/api/change-password", requireAuth, async (req, res) => {
     const { currentPassword, newPassword } = req.body;
     const userId = req.session.user.id;
 
-    if (!currentPassword || !newPassword) {
-      return res
-        .status(400)
-        .json({ error: "Senha atual e nova senha são obrigatórias" });
+    if (!newPassword) {
+      return res.status(400).json({ error: "Nova senha é obrigatória" });
     }
 
     if (newPassword.length < 6) {
@@ -1206,18 +1242,27 @@ app.post("/api/change-password", requireAuth, async (req, res) => {
         .json({ error: "Nova senha deve ter pelo menos 6 caracteres" });
     }
 
-    // Verificar se a senha atual está correta
-    const user = await db.getUserById(userId);
-    if (!user) {
-      return res.status(404).json({ error: "Usuário não encontrado" });
-    }
+    // Verificar se o usuário precisa alterar a senha
+    const forcePasswordChange = await db.checkForcePasswordChange(userId);
 
-    const isCurrentPasswordValid = await bcrypt.compare(
-      currentPassword,
-      user.password
-    );
-    if (!isCurrentPasswordValid) {
-      return res.status(400).json({ error: "Senha atual incorreta" });
+    if (!forcePasswordChange) {
+      // Se não precisa forçar alteração, verificar senha atual
+      if (!currentPassword) {
+        return res.status(400).json({ error: "Senha atual é obrigatória" });
+      }
+
+      const user = await db.getUserById(userId);
+      if (!user) {
+        return res.status(404).json({ error: "Usuário não encontrado" });
+      }
+
+      const isCurrentPasswordValid = await bcrypt.compare(
+        currentPassword,
+        user.password
+      );
+      if (!isCurrentPasswordValid) {
+        return res.status(400).json({ error: "Senha atual incorreta" });
+      }
     }
 
     // Alterar senha e limpar flag de força de alteração
@@ -1262,10 +1307,6 @@ async function startServer() {
     // Inicializar banco de dados
     await db.initDatabase();
     console.log("Banco de dados inicializado com sucesso");
-
-    // Carregar configurações
-    await loadConfig();
-    console.log("Configurações carregadas");
 
     // Iniciar servidor
     app.listen(PORT, () => {

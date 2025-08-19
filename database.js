@@ -16,13 +16,12 @@ const db = new sqlite3.Database(dbPath);
 function initDatabase() {
   return new Promise((resolve, reject) => {
     db.serialize(() => {
-      // Tabela de configurações
+      // Tabela de configuração global (Evolution API)
       db.run(`
-        CREATE TABLE IF NOT EXISTS config (
+        CREATE TABLE IF NOT EXISTS global_config (
           id INTEGER PRIMARY KEY,
-          evolutionApiUrl TEXT NOT NULL,
-          token TEXT NOT NULL,
-          instanceName TEXT NOT NULL,
+          evolution_api_url TEXT NOT NULL,
+          evolution_api_token TEXT NOT NULL,
           updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )
       `);
@@ -37,7 +36,9 @@ function initDatabase() {
           createdAt TEXT NOT NULL,
           sent INTEGER DEFAULT 0,
           sentAt TEXT,
-          error TEXT
+          error TEXT,
+          user_id INTEGER NOT NULL,
+          FOREIGN KEY(user_id) REFERENCES users(id)
         )
       `);
 
@@ -50,7 +51,11 @@ function initDatabase() {
           password TEXT NOT NULL,
           role TEXT DEFAULT 'user',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-          force_password_change INTEGER DEFAULT 0
+          force_password_change INTEGER DEFAULT 0,
+          instance_name TEXT UNIQUE,
+          instance_connected INTEGER DEFAULT 0,
+          instance_qr_code TEXT,
+          instance_status TEXT DEFAULT 'disconnected'
         )
       `,
         (err) => {
@@ -61,38 +66,68 @@ function initDatabase() {
             db.run(
               "ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'",
               () => {
-                // Ignorar erro se já existe
-                // Criar tabela de configs por usuário
+                // Tentar adicionar colunas de instância se não existirem
                 db.run(
-                  `CREATE TABLE IF NOT EXISTS user_configs (
+                  "ALTER TABLE users ADD COLUMN instance_name TEXT",
+                  () => {
+                    db.run(
+                      "ALTER TABLE users ADD COLUMN instance_connected INTEGER DEFAULT 0",
+                      () => {
+                        db.run(
+                          "ALTER TABLE users ADD COLUMN instance_qr_code TEXT",
+                          () => {
+                            db.run(
+                              "ALTER TABLE users ADD COLUMN instance_status TEXT DEFAULT 'disconnected'",
+                              () => {
+                                // Ignorar erros se já existem
+                              }
+                            );
+                          }
+                        );
+                      }
+                    );
+                  }
+                );
+                // Ignorar erro se já existe
+                // Criar tabela de instâncias por usuário
+                db.run(
+                  `CREATE TABLE IF NOT EXISTS user_instances (
                   id INTEGER PRIMARY KEY,
                   user_id INTEGER NOT NULL,
+                  name TEXT NOT NULL,
                   evolutionApiUrl TEXT NOT NULL,
                   token TEXT NOT NULL,
                   instanceName TEXT NOT NULL,
+                  is_active INTEGER DEFAULT 1,
+                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                   FOREIGN KEY(user_id) REFERENCES users(id)
                 )`,
                   () => {
-                    // Adicionar user_id em mensagens (migração leve)
+                    // Adicionar user_id e instance_id em mensagens (migração leve)
                     db.run(
                       "ALTER TABLE scheduled_messages ADD COLUMN user_id INTEGER",
                       () => {
-                        // Ajustes de migração: garantir roles e admin
                         db.run(
-                          "UPDATE users SET role = 'admin' WHERE username = 'admin' AND (role IS NULL OR role = '' OR role = 'user')",
+                          "ALTER TABLE scheduled_messages ADD COLUMN instance_id INTEGER",
                           () => {
+                            // Ajustes de migração: garantir roles e admin
                             db.run(
-                              "UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''",
+                              "UPDATE users SET role = 'admin' WHERE username = 'admin' AND (role IS NULL OR role = '' OR role = 'user')",
                               () => {
-                                // Adicionar coluna force_password_change se não existir
                                 db.run(
-                                  "ALTER TABLE users ADD COLUMN force_password_change INTEGER DEFAULT 0",
+                                  "UPDATE users SET role = 'user' WHERE role IS NULL OR role = ''",
                                   () => {
-                                    // Criar usuário padrão se não existir
-                                    createDefaultUser()
-                                      .then(resolve)
-                                      .catch(reject);
+                                    // Adicionar coluna force_password_change se não existir
+                                    db.run(
+                                      "ALTER TABLE users ADD COLUMN force_password_change INTEGER DEFAULT 0",
+                                      () => {
+                                        // Criar usuário padrão se não existir
+                                        createDefaultUser()
+                                          .then(resolve)
+                                          .catch(reject);
+                                      }
+                                    );
                                   }
                                 );
                               }
@@ -143,50 +178,77 @@ async function createDefaultUser() {
   });
 }
 
-// Funções para configurações
-function getConfig() {
+// Funções para gerenciar configuração global
+function getGlobalConfig() {
   return new Promise((resolve, reject) => {
-    db.get("SELECT * FROM config ORDER BY id DESC LIMIT 1", (err, row) => {
-      if (err) {
-        reject(err);
-      } else {
-        resolve(
-          row || {
-            evolutionApiUrl: "http://localhost:8080",
-            token: "",
-            instanceName: "default",
-          }
-        );
+    db.get(
+      "SELECT * FROM global_config ORDER BY id DESC LIMIT 1",
+      (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row);
+        }
       }
-    });
+    );
   });
 }
 
-// Configuração por usuário
-function getUserConfig(userId) {
+function saveGlobalConfig(config) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      "INSERT INTO global_config (evolution_api_url, evolution_api_token) VALUES (?, ?)",
+      [config.evolution_api_url, config.evolution_api_token],
+      function (err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      }
+    );
+  });
+}
+
+// Funções para gerenciar instâncias de usuário
+function generateInstanceName(username) {
+  // Gerar hash baseado no username + timestamp
+  const timestamp = Date.now().toString(36);
+  const hash = require("crypto")
+    .createHash("md5")
+    .update(username + timestamp)
+    .digest("hex")
+    .substring(0, 8);
+  return `${username}_${hash}`;
+}
+
+function getUserInstanceData(userId) {
   return new Promise((resolve, reject) => {
     db.get(
-      "SELECT * FROM user_configs WHERE user_id = ? ORDER BY id DESC LIMIT 1",
+      "SELECT instance_name, instance_connected, instance_qr_code, instance_status FROM users WHERE id = ?",
       [userId],
       (err, row) => {
         if (err) {
           reject(err);
-        } else if (row) {
+        } else {
           resolve(row);
-        } else {
-          // Fallback para config global
-          getConfig().then(resolve).catch(reject);
         }
       }
     );
   });
 }
 
-function saveUserConfig(userId, config) {
+function updateUserInstance(userId, instanceData) {
   return new Promise((resolve, reject) => {
     db.run(
-      "INSERT INTO user_configs (user_id, evolutionApiUrl, token, instanceName) VALUES (?, ?, ?, ?)",
-      [userId, config.evolutionApiUrl, config.token, config.instanceName],
+      "UPDATE users SET instance_name = ?, instance_connected = ?, instance_qr_code = ?, instance_status = ? WHERE id = ?",
+      [
+        instanceData.instance_name,
+        instanceData.instance_connected ? 1 : 0,
+        instanceData.instance_qr_code,
+        instanceData.instance_status,
+        userId,
+      ],
       function (err) {
         if (err) {
           reject(err);
@@ -198,16 +260,136 @@ function saveUserConfig(userId, config) {
   });
 }
 
-function saveConfig(config) {
+// Funções para gerenciar instâncias por usuário
+function getUserInstances(userId) {
+  return new Promise((resolve, reject) => {
+    db.all(
+      "SELECT * FROM user_instances WHERE user_id = ? ORDER BY created_at DESC",
+      [userId],
+      (err, rows) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(rows || []);
+        }
+      }
+    );
+  });
+}
+
+function getUserInstance(userId, instanceId) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      "SELECT * FROM user_instances WHERE user_id = ? AND id = ?",
+      [userId, instanceId],
+      (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row);
+        }
+      }
+    );
+  });
+}
+
+function createUserInstance(userId, instanceData) {
   return new Promise((resolve, reject) => {
     db.run(
-      "INSERT INTO config (evolutionApiUrl, token, instanceName) VALUES (?, ?, ?)",
-      [config.evolutionApiUrl, config.token, config.instanceName],
+      "INSERT INTO user_instances (user_id, name, evolutionApiUrl, token, instanceName) VALUES (?, ?, ?, ?, ?)",
+      [
+        userId,
+        instanceData.name,
+        instanceData.evolutionApiUrl,
+        instanceData.token,
+        instanceData.instanceName,
+      ],
+      function (err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve({ id: this.lastID, ...instanceData });
+        }
+      }
+    );
+  });
+}
+
+function updateUserInstanceData(userId, instanceId, instanceData) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE user_instances SET name = ?, evolutionApiUrl = ?, token = ?, instanceName = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ? AND id = ?",
+      [
+        instanceData.name,
+        instanceData.evolutionApiUrl,
+        instanceData.token,
+        instanceData.instanceName,
+        userId,
+        instanceId,
+      ],
       function (err) {
         if (err) {
           reject(err);
         } else {
           resolve();
+        }
+      }
+    );
+  });
+}
+
+function deleteUserInstance(userId, instanceId) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      "DELETE FROM user_instances WHERE user_id = ? AND id = ?",
+      [userId, instanceId],
+      function (err) {
+        if (err) {
+          reject(err);
+        } else {
+          resolve();
+        }
+      }
+    );
+  });
+}
+
+function setActiveInstance(userId, instanceId) {
+  return new Promise((resolve, reject) => {
+    db.run(
+      "UPDATE user_instances SET is_active = 0 WHERE user_id = ?",
+      [userId],
+      (err) => {
+        if (err) {
+          reject(err);
+        } else {
+          db.run(
+            "UPDATE user_instances SET is_active = 1 WHERE user_id = ? AND id = ?",
+            [userId, instanceId],
+            (err) => {
+              if (err) {
+                reject(err);
+              } else {
+                resolve();
+              }
+            }
+          );
+        }
+      }
+    );
+  });
+}
+
+function getActiveInstance(userId) {
+  return new Promise((resolve, reject) => {
+    db.get(
+      "SELECT * FROM user_instances WHERE user_id = ? AND is_active = 1",
+      [userId],
+      (err, row) => {
+        if (err) {
+          reject(err);
+        } else {
+          resolve(row);
         }
       }
     );
@@ -238,7 +420,11 @@ function getAllMessages() {
 function getMessagesByUser(userId) {
   return new Promise((resolve, reject) => {
     db.all(
-      "SELECT * FROM scheduled_messages WHERE user_id = ? ORDER BY scheduledTime DESC",
+      `SELECT m.*, i.name as instance_name 
+       FROM scheduled_messages m 
+       LEFT JOIN user_instances i ON m.instance_id = i.id 
+       WHERE m.user_id = ? 
+       ORDER BY m.scheduledTime DESC`,
       [userId],
       (err, rows) => {
         if (err) {
@@ -259,7 +445,7 @@ function getMessagesByUser(userId) {
 function saveMessage(message) {
   return new Promise((resolve, reject) => {
     db.run(
-      "INSERT INTO scheduled_messages (id, phone, message, scheduledTime, createdAt, sent, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      "INSERT INTO scheduled_messages (id, phone, message, scheduledTime, createdAt, sent, user_id, instance_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
       [
         message.id,
         message.phone,
@@ -268,6 +454,7 @@ function saveMessage(message) {
         message.createdAt,
         message.sent ? 1 : 0,
         message.userId || null,
+        message.instanceId || null,
       ],
       function (err) {
         if (err) {
@@ -483,15 +670,23 @@ function getUserById(userId) {
 
 module.exports = {
   initDatabase,
-  getConfig,
-  getUserConfig,
-  saveUserConfig,
-  saveConfig,
+  // Configuração global
+  getGlobalConfig,
+  saveGlobalConfig,
+  // Instâncias de usuário
+  generateInstanceName,
+  getUserInstanceData,
+  updateUserInstance,
+  updateUserInstanceData,
+  createUserInstance,
+  getActiveInstance,
+  // Mensagens
   getAllMessages,
   getMessagesByUser,
   saveMessage,
   updateMessageStatus,
   deleteMessage,
+  // Usuários
   authenticateUser,
   listUsers,
   createUser,

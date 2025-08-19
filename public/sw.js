@@ -1,4 +1,4 @@
-const CACHE_NAME = "schedulezap-v1";
+const CACHE_NAME = "schedulezap-v5";
 const urlsToCache = [
   "/",
   "/login.html",
@@ -23,6 +23,11 @@ self.addEventListener("install", (event) => {
 self.addEventListener("fetch", (event) => {
   // Só processar requisições GET
   if (event.request.method !== "GET") {
+    return;
+  }
+
+  // Não cachear requisições da API
+  if (event.request.url.includes("/api/")) {
     return;
   }
 

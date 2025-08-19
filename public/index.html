@@ -229,6 +229,10 @@
               <i class="fas fa-list me-2"></i>
               Mensagens Agendadas
             </a>
+            <a class="nav-link" href="#" onclick="showSection('instances')">
+              <i class="fas fa-server me-2"></i>
+              Instâncias
+            </a>
             <a
               class="nav-link d-none"
               id="adminNav"
@@ -357,15 +361,196 @@
             </div>
           </div>
 
+          <!-- Seção Instâncias -->
+          <div id="instances-section" class="section" style="display: none">
+            <div class="row">
+              <div class="col-12">
+                <div class="card">
+                  <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                      <i class="fas fa-whatsapp me-2"></i>
+                      Conectar WhatsApp
+                    </h5>
+                  </div>
+                  <div class="card-body">
+                    <div id="instanceStatus">
+                      <!-- Estado: Sem Instância -->
+                      <div id="noInstance" class="text-center py-5">
+                        <i class="fas fa-plug text-muted fa-3x mb-3"></i>
+                        <h5>Conecte seu WhatsApp</h5>
+                        <p class="text-muted mb-4">
+                          Você ainda não tem uma instância do WhatsApp
+                          conectada.
+                        </p>
+                        <button
+                          class="btn btn-primary"
+                          onclick="createInstance()"
+                        >
+                          <i class="fas fa-qrcode me-1"></i>
+                          Conectar WhatsApp
+                        </button>
+                      </div>
+
+                      <!-- Estado: Conectando -->
+                      <div
+                        id="connecting"
+                        class="text-center py-5"
+                        style="display: none"
+                      >
+                        <i class="fas fa-spinner fa-spin fa-3x mb-3"></i>
+                        <h5>Conectando...</h5>
+                        <p class="text-muted">
+                          Aguarde enquanto configuramos sua instância.
+                        </p>
+                      </div>
+
+                      <!-- Estado: Conectado -->
+                      <div
+                        id="connected"
+                        class="text-center py-5"
+                        style="display: none"
+                      >
+                        <i
+                          class="fas fa-check-circle text-success fa-3x mb-3"
+                        ></i>
+                        <h5>WhatsApp Conectado</h5>
+                        <p class="text-muted mb-4">
+                          Seu WhatsApp está conectado e pronto para uso.
+                        </p>
+                        <div class="d-flex justify-content-center gap-2">
+                          <button
+                            class="btn btn-outline-danger"
+                            onclick="disconnectInstance()"
+                          >
+                            <i class="fas fa-power-off me-1"></i>
+                            Desconectar
+                          </button>
+                          <button
+                            class="btn btn-outline-primary"
+                            onclick="refreshStatus()"
+                          >
+                            <i class="fas fa-sync-alt me-1"></i>
+                            Atualizar Status
+                          </button>
+                        </div>
+                      </div>
+
+                      <!-- Estado: Erro -->
+                      <div
+                        id="error"
+                        class="text-center py-5"
+                        style="display: none"
+                      >
+                        <i
+                          class="fas fa-exclamation-triangle text-danger fa-3x mb-3"
+                        ></i>
+                        <h5>Erro na Conexão</h5>
+                        <p class="text-danger mb-4" id="errorMessage">
+                          Ocorreu um erro ao conectar seu WhatsApp.
+                        </p>
+                        <button
+                          class="btn btn-primary"
+                          onclick="retryConnection()"
+                        >
+                          <i class="fas fa-sync-alt me-1"></i>
+                          Tentar Novamente
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Seção Admin -->
           <div id="admin-section" class="section" style="display: none">
+            <!-- Configuração Global -->
+            <div class="row mb-4">
+              <div class="col-12">
+                <div class="card">
+                  <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                      <i class="fas fa-cog me-2"></i>
+                      Configuração da Evolution API
+                    </h5>
+                  </div>
+                  <div class="card-body">
+                    <form id="globalConfigForm">
+                      <div class="row">
+                        <div class="col-md-6 mb-3">
+                          <label for="evolutionApiUrl" class="form-label"
+                            >URL da Evolution API</label
+                          >
+                          <input
+                            type="url"
+                            class="form-control"
+                            id="evolutionApiUrl"
+                            placeholder="http://localhost:8080"
+                            required
+                          />
+                          <div class="form-text">URL base da Evolution API</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                          <label for="evolutionApiToken" class="form-label"
+                            >API Key</label
+                          >
+                          <div class="input-group">
+                            <input
+                              type="password"
+                              class="form-control"
+                              id="evolutionApiToken"
+                              placeholder="Sua API Key"
+                              required
+                            />
+                            <button
+                              class="btn btn-outline-secondary"
+                              type="button"
+                              onclick="togglePasswordVisibility('evolutionApiToken')"
+                            >
+                              <i
+                                class="fas fa-eye"
+                                id="evolutionApiTokenIcon"
+                              ></i>
+                            </button>
+                          </div>
+                          <div class="form-text">
+                            Token de autenticação da Evolution API
+                          </div>
+                        </div>
+                      </div>
+                      <div class="d-flex justify-content-end gap-2">
+                        <button
+                          type="button"
+                          class="btn btn-outline-primary"
+                          onclick="testGlobalConfig()"
+                        >
+                          <i class="fas fa-wifi me-1"></i>
+                          Testar Conexão
+                        </button>
+                        <button
+                          type="button"
+                          class="btn btn-primary"
+                          onclick="saveGlobalConfig()"
+                        >
+                          <i class="fas fa-save me-1"></i>
+                          Salvar Configuração
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Gerenciamento de Usuários -->
             <div class="row">
               <div
                 class="col-12 d-flex justify-content-between align-items-center mb-3"
               >
                 <h2>
                   <i class="fas fa-user-shield text-primary me-2"></i>
-                  Administração
+                  Gerenciar Usuários
                 </h2>
                 <div>
                   <button
@@ -566,29 +751,11 @@
                 <div class="form-text">Mínimo 3 caracteres</div>
               </div>
               <div class="mb-3">
-                <label for="modalPassword" class="form-label"
-                  >Senha Inicial</label
-                >
-                <div class="input-group">
-                  <input
-                    type="password"
-                    class="form-control"
-                    id="modalPassword"
-                    placeholder="Senha temporária"
-                    required
-                    minlength="6"
-                  />
-                  <button
-                    class="btn btn-outline-secondary"
-                    type="button"
-                    onclick="generateRandomPassword()"
-                  >
-                    <i class="fas fa-dice"></i>
-                  </button>
-                </div>
-                <div class="form-text">
-                  Mínimo 6 caracteres. O usuário deverá alterar no primeiro
-                  login.
+                <div class="alert alert-info">
+                  <i class="fas fa-info-circle me-2"></i>
+                  Uma senha aleatória será gerada automaticamente e exibida após
+                  a criação do usuário. O usuário deverá alterar a senha no
+                  primeiro login.
                 </div>
               </div>
               <div class="mb-3">
@@ -599,19 +766,6 @@
                   <option value="user" selected>Usuário</option>
                   <option value="admin">Administrador</option>
                 </select>
-              </div>
-              <div class="mb-3">
-                <div class="form-check">
-                  <input
-                    class="form-check-input"
-                    type="checkbox"
-                    id="forcePasswordChange"
-                    checked
-                  />
-                  <label class="form-check-label" for="forcePasswordChange">
-                    Forçar alteração de senha no primeiro login
-                  </label>
-                </div>
               </div>
             </form>
           </div>
@@ -637,19 +791,21 @@
     </div>
 
     <!-- Modal para configurações de usuário -->
+
+    <!-- Modal para mostrar senha temporária -->
     <div
       class="modal fade"
-      id="userConfigModal"
+      id="temporaryPasswordModal"
       tabindex="-1"
-      aria-labelledby="userConfigModalLabel"
+      aria-labelledby="temporaryPasswordModalLabel"
       aria-hidden="true"
     >
-      <div class="modal-dialog modal-lg">
+      <div class="modal-dialog">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title" id="userConfigModalLabel">
-              <i class="fas fa-cog me-2"></i>
-              Configurações do Usuário
+            <h5 class="modal-title" id="temporaryPasswordModalLabel">
+              <i class="fas fa-key me-2"></i>
+              Senha Temporária Gerada
             </h5>
             <button
               type="button"
@@ -659,90 +815,170 @@
             ></button>
           </div>
           <div class="modal-body">
-            <div class="row mb-3">
-              <div class="col-12">
-                <div class="alert alert-info">
-                  <i class="fas fa-info-circle me-2"></i>
-                  Configure as credenciais da Evolution API para o usuário
-                  <strong id="configUserName"></strong>
-                </div>
+            <div class="alert alert-warning">
+              <i class="fas fa-exclamation-triangle me-2"></i>
+              <strong>Importante:</strong> Esta senha é temporária e deve ser
+              alterada no primeiro login.
+            </div>
+            <div class="mb-3">
+              <label class="form-label"><strong>Usuário:</strong></label>
+              <div
+                class="form-control-plaintext"
+                id="tempPasswordUsername"
+              ></div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label"
+                ><strong>Senha Temporária:</strong></label
+              >
+              <div class="input-group">
+                <input
+                  type="text"
+                  class="form-control"
+                  id="tempPasswordValue"
+                  readonly
+                />
+                <button
+                  class="btn btn-outline-secondary"
+                  type="button"
+                  onclick="copyToClipboard('tempPasswordValue')"
+                >
+                  <i class="fas fa-copy"></i>
+                </button>
               </div>
             </div>
-            <form id="userConfigForm">
-              <input type="hidden" id="configUserId" />
-              <div class="row">
-                <div class="col-md-6 mb-3">
-                  <label for="configApiUrl" class="form-label"
-                    >Evolution API URL</label
-                  >
-                  <input
-                    type="url"
-                    class="form-control"
-                    id="configApiUrl"
-                    placeholder="http://localhost:8080"
-                    required
-                  />
-                </div>
-                <div class="col-md-6 mb-3">
-                  <label for="configInstance" class="form-label"
-                    >Nome da Instância</label
-                  >
-                  <input
-                    type="text"
-                    class="form-control"
-                    id="configInstance"
-                    placeholder="default"
-                    required
-                  />
-                </div>
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-primary"
+              data-bs-dismiss="modal"
+            >
+              Entendi
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal para alteração de senha obrigatória -->
+    <div
+      class="modal fade"
+      id="changePasswordModal"
+      tabindex="-1"
+      aria-labelledby="changePasswordModalLabel"
+      aria-hidden="true"
+      data-bs-backdrop="static"
+      data-bs-keyboard="false"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="changePasswordModalLabel">
+              <i class="fas fa-exclamation-triangle me-2 text-warning"></i>
+              Alteração de Senha Obrigatória
+            </h5>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-warning">
+              <i class="fas fa-info-circle me-2"></i>
+              <strong>Importante:</strong> Por segurança, você deve alterar sua
+              senha antes de continuar.
+            </div>
+            <form id="changePasswordForm">
+              <div class="mb-3">
+                <label for="newPassword" class="form-label">Nova Senha</label>
+                <input
+                  type="password"
+                  class="form-control"
+                  id="newPassword"
+                  placeholder="Digite sua nova senha"
+                  required
+                  minlength="6"
+                />
+                <div class="form-text">Mínimo 6 caracteres</div>
               </div>
               <div class="mb-3">
-                <label for="configToken" class="form-label">API Key</label>
-                <div class="input-group">
-                  <input
-                    type="password"
-                    class="form-control"
-                    id="configToken"
-                    placeholder="Sua API Key"
-                    required
-                  />
-                  <button
-                    class="btn btn-outline-secondary"
-                    type="button"
-                    onclick="togglePasswordVisibility('configToken')"
-                  >
-                    <i class="fas fa-eye" id="configTokenIcon"></i>
-                  </button>
-                </div>
-              </div>
-              <div class="mb-3">
-                <button
-                  type="button"
-                  class="btn btn-outline-info btn-sm"
-                  onclick="testUserConnection()"
+                <label for="confirmPassword" class="form-label"
+                  >Confirmar Nova Senha</label
                 >
-                  <i class="fas fa-wifi me-1"></i>
-                  Testar Conexão
-                </button>
+                <input
+                  type="password"
+                  class="form-control"
+                  id="confirmPassword"
+                  placeholder="Confirme sua nova senha"
+                  required
+                  minlength="6"
+                />
               </div>
             </form>
           </div>
           <div class="modal-footer">
             <button
               type="button"
-              class="btn btn-secondary"
-              data-bs-dismiss="modal"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
               class="btn btn-primary"
-              onclick="saveUserConfigFromModal()"
+              onclick="changePasswordFromModal()"
             >
               <i class="fas fa-save me-1"></i>
-              Salvar Configuração
+              Alterar Senha
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal para QR Code -->
+    <div
+      class="modal fade"
+      id="qrCodeModal"
+      tabindex="-1"
+      aria-labelledby="qrCodeModalLabel"
+      aria-hidden="true"
+      data-bs-backdrop="static"
+      data-bs-keyboard="false"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="qrCodeModalLabel">
+              <i class="fas fa-qrcode me-2"></i>
+              Conectar WhatsApp
+            </h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body text-center">
+            <div id="qrCodeLoading">
+              <i class="fas fa-spinner fa-spin fa-3x mb-3"></i>
+              <p>Gerando QR Code...</p>
+            </div>
+            <div id="qrCodeDisplay" style="display: none">
+              <img
+                id="qrCodeImage"
+                src=""
+                alt="QR Code"
+                class="img-fluid mb-3"
+              />
+              <p class="text-muted">
+                Abra o WhatsApp no seu celular e escaneie o QR Code
+              </p>
+            </div>
+            <div id="qrCodeError" style="display: none">
+              <i class="fas fa-exclamation-triangle text-danger fa-3x mb-3"></i>
+              <p class="text-danger" id="qrCodeErrorMessage"></p>
+              <button class="btn btn-primary" onclick="retryQrCode()">
+                <i class="fas fa-sync-alt me-1"></i>
+                Tentar Novamente
+              </button>
+            </div>
+            <div id="qrCodeSuccess" style="display: none">
+              <i class="fas fa-check-circle text-success fa-3x mb-3"></i>
+              <p class="text-success">WhatsApp conectado com sucesso!</p>
+            </div>
           </div>
         </div>
       </div>

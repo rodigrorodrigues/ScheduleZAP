@@ -37,12 +37,19 @@ document.addEventListener("DOMContentLoaded", function () {
         return;
       }
 
-      // Usuário autenticado, inicializar aplicação
+      // Usuário autenticado, verificar se precisa alterar senha
       const username = authStatus.user?.username || authStatus.username || "";
       const role = authStatus.user?.role || null;
-      const isAdmin = role === "admin" || username === "admin";
+      window.isAdmin = role === "admin" || username === "admin"; // Define variável global
+      const forcePasswordChange = authStatus.user?.forcePasswordChange || false;
+
       const adminNav = document.getElementById("adminNav");
-      console.log("Auth user:", { username, role, isAdmin });
+      console.log("Auth user:", {
+        username,
+        role,
+        isAdmin,
+        forcePasswordChange,
+      });
       if (adminNav) {
         if (isAdmin) {
           adminNav.classList.remove("d-none");
@@ -52,16 +59,37 @@ document.addEventListener("DOMContentLoaded", function () {
       }
       updateUserInfo(username);
       toast = new bootstrap.Toast(document.getElementById("toast"));
-      loadConfig();
-      loadMessages();
+
+      // Se precisa alterar senha, mostrar modal
+      if (forcePasswordChange) {
+        showChangePasswordModal();
+      } else {
+        // Carregar configuração global se for admin
+        if (window.isAdmin) {
+          loadGlobalConfig();
+        }
+
+        // Carregar status da instância
+        loadInstanceStatus().then(async () => {
+          // Verificar se tem instância conectada
+          const instanceRes = await fetch("/api/instance");
+          if (!instanceRes.ok) return;
+          const instance = await instanceRes.json();
+
+          // Se não tiver instância conectada, redirecionar para seção de instâncias
+          if (!instance?.instance_connected) {
+            showSection("instances");
+          } else {
+            // Se tiver instância conectada, carregar mensagens
+            loadMessages();
+          }
+        });
+      }
 
       // Event listeners
       document
         .getElementById("scheduleForm")
         .addEventListener("submit", handleScheduleSubmit);
-      document
-        .getElementById("configForm")
-        .addEventListener("submit", handleConfigSubmit);
 
       // Definir data/hora mínima como agora
       const now = new Date();
@@ -76,7 +104,7 @@ document.addEventListener("DOMContentLoaded", function () {
 });
 
 // Função para mostrar seções
-function showSection(section) {
+async function showSection(section) {
   // Esconder todas as seções
   document
     .querySelectorAll(".section")
@@ -91,15 +119,34 @@ function showSection(section) {
   document.getElementById(section + "-section").style.display = "block";
 
   // Adicionar classe active ao link clicado
-  event.target.classList.add("active");
+  if (event?.target) {
+    event.target.classList.add("active");
+  } else {
+    document
+      .querySelector(`.nav-link[onclick*="showSection('${section}')"]`)
+      ?.classList.add("active");
+  }
 
   currentSection = section;
+
+  // Se for seção de agendamento ou mensagens, verificar se tem instância conectada
+  if (section === "schedule" || section === "scheduled") {
+    const instanceRes = await fetch("/api/instance");
+    if (!instanceRes.ok) return;
+    const instance = await instanceRes.json();
+
+    if (!instance?.instance_connected) {
+      showToast("Conecte seu WhatsApp antes de agendar mensagens", "warning");
+      showSection("instances");
+      return;
+    }
+  }
 
   // Recarregar dados se necessário
   if (section === "scheduled") {
     loadMessages();
-  } else if (section === "config") {
-    loadConfig();
+  } else if (section === "instances") {
+    loadInstanceStatus();
   }
 }
 
@@ -131,17 +178,25 @@ async function loadGroupsCacheIfNeeded() {
     // Se já temos grupos no cache, evitar chamada
     if (groupsMap && Object.keys(groupsMap).length > 0) return;
 
-    const res = await fetch(`/api/config/status?_t=${Date.now()}`);
-    const cfg = await res.json();
-    if (!cfg.hasConfig) return;
+    // Verificar se tem instância conectada
+    const instanceRes = await fetch("/api/instance");
+    if (!instanceRes.ok) {
+      console.log("Falha ao verificar instância");
+      return;
+    }
+    const instance = await instanceRes.json();
+    if (!instance?.instance_connected) {
+      console.log("Instância não conectada");
+      return;
+    }
 
-    const res2 = await fetch(`/api/chats?_t=${Date.now()}`, {
-      headers: {
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
-      },
-    });
-    if (!res2.ok) return;
+    // Carregar grupos
+    const res2 = await fetch(`/api/chats`);
+    if (!res2.ok) {
+      console.log("Erro ao carregar grupos:", res2.status);
+      return;
+    }
+
     const data = await res2.json();
     if (data && Array.isArray(data.chats)) {
       const map = {};
@@ -151,9 +206,13 @@ async function loadGroupsCacheIfNeeded() {
         }
       });
       groupsMap = map;
+      console.log(
+        `Cache de grupos atualizado: ${Object.keys(map).length} grupos`
+      );
     }
   } catch (e) {
-    // Silenciar erros de cache
+    console.error("Erro ao carregar cache de grupos:", e);
+    // Não mostrar erro para o usuário pois é apenas cache
   }
 }
 
@@ -205,13 +264,33 @@ async function loadMessages() {
   try {
     console.log("Carregando mensagens...");
 
+    // Verificar se tem instância conectada
+    const instanceRes = await fetch("/api/instance");
+    if (!instanceRes.ok) throw new Error("Falha ao verificar instância");
+    const instance = await instanceRes.json();
+
+    const messagesList = document.getElementById("messagesList");
+
+    if (!instance?.instance_connected) {
+      messagesList.innerHTML = `
+        <div class="text-center text-warning py-5">
+          <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+          <h5>WhatsApp não conectado</h5>
+          <p class="text-muted mb-4">
+            Conecte seu WhatsApp para poder agendar mensagens.
+          </p>
+          <a href="#" onclick="showSection('instances')" class="btn btn-primary">
+            <i class="fas fa-plug me-1"></i>
+            Conectar WhatsApp
+          </a>
+        </div>
+      `;
+      return;
+    }
+
     // Adicionar timestamp para evitar cache
-    const response = await fetch("/api/messages?_t=" + Date.now(), {
+    const response = await fetch("/api/messages", {
       method: "GET",
-      headers: {
-        "Cache-Control": "no-cache",
-        Pragma: "no-cache",
-      },
     });
 
     if (!response.ok) {
@@ -224,68 +303,72 @@ async function loadMessages() {
     await loadGroupsCacheIfNeeded();
     console.log("Mensagens recebidas:", messages);
 
-    const messagesList = document.getElementById("messagesList");
-    console.log("Elemento messagesList encontrado:", !!messagesList);
-
     if (messages.length === 0) {
       console.log("Nenhuma mensagem encontrada");
       messagesList.innerHTML = `
-                <div class="text-center text-muted">
-                    <i class="fas fa-inbox fa-3x mb-3"></i>
-                    <p>Nenhuma mensagem agendada</p>
-                </div>
-            `;
+        <div class="text-center text-muted py-5">
+          <i class="fas fa-inbox fa-3x mb-3"></i>
+          <h5>Nenhuma mensagem agendada</h5>
+          <p class="mb-4">
+            Você ainda não tem nenhuma mensagem agendada.
+          </p>
+          <a href="#" onclick="showSection('schedule')" class="btn btn-primary">
+            <i class="fas fa-calendar-plus me-1"></i>
+            Agendar Nova Mensagem
+          </a>
+        </div>
+      `;
       return;
     }
 
     messagesList.innerHTML = messages
       .map(
         (message) => `
-            <div class="card mb-3">
-                <div class="card-body">
-                    <div class="row align-items-center">
-                        <div class="col-md-3">
-                            <strong>Telefone:</strong><br>
-                            ${getRecipientDisplay(message.phone)}
-                        </div>
-                        <div class="col-md-3">
-                            <strong>Agendado para:</strong><br>
-                            ${formatDateTime(message.scheduledTime)}
-                        </div>
-                        <div class="col-md-3">
-                            <strong>Status:</strong><br>
-                            ${getStatusBadge(message)}
-                        </div>
-                        <div class="col-md-3 text-end">
-                            <button class="btn btn-sm btn-danger" onclick="deleteMessage('${
-                              message.id
-                            }')">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <div class="row mt-2">
-                        <div class="col-12">
-                            <strong>Mensagem:</strong><br>
-                            <div class="bg-light p-2 rounded">
-                                ${message.message}
-                            </div>
-                        </div>
-                    </div>
-                    ${
-                      message.error
-                        ? `
-                        <div class="row mt-2">
-                            <div class="col-12">
-                                <strong class="text-danger">Erro:</strong><br>
-                                <small class="text-danger">${message.error}</small>
-                            </div>
-                        </div>
-                    `
-                        : ""
-                    }
+          <div class="card mb-3">
+            <div class="card-body">
+              <div class="row align-items-center">
+                <div class="col-md-3">
+                  <strong>Telefone:</strong><br>
+                  ${getRecipientDisplay(message.phone)}
                 </div>
+                <div class="col-md-3">
+                  <strong>Agendado para:</strong><br>
+                  ${formatDateTime(message.scheduledTime)}
+                </div>
+                <div class="col-md-3">
+                  <strong>Status:</strong><br>
+                  ${getStatusBadge(message)}
+                </div>
+                <div class="col-md-3 text-end">
+                  <button class="btn btn-sm btn-danger" onclick="deleteMessage('${
+                    message.id
+                  }')">
+                    <i class="fas fa-trash"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="row mt-2">
+                <div class="col-12">
+                  <strong>Mensagem:</strong><br>
+                  <div class="bg-light p-2 rounded">
+                    ${message.message}
+                  </div>
+                </div>
+              </div>
+              ${
+                message.error
+                  ? `
+                  <div class="row mt-2">
+                    <div class="col-12">
+                      <strong class="text-danger">Erro:</strong><br>
+                      <small class="text-danger">${message.error}</small>
+                    </div>
+                  </div>
+                `
+                  : ""
+              }
             </div>
+          </div>
         `
       )
       .join("");
@@ -298,15 +381,45 @@ async function loadMessages() {
 // Função para carregar configurações
 async function loadConfig() {
   try {
-    const response = await fetch("/api/config");
-    const config = await response.json();
+    // Verificar se há uma instância ativa
+    const res = await fetch(`/api/instances/active`);
+    if (!res.ok) {
+      console.log("Nenhuma instância ativa encontrada");
+      return;
+    }
 
-    document.getElementById("evolutionApiUrl").value = config.evolutionApiUrl;
-    document.getElementById("token").value = config.token;
-    document.getElementById("instanceName").value = config.instanceName;
-  } catch (error) {
-    console.error("Erro ao carregar configurações:", error);
-    showToast("Erro ao carregar configurações", "error");
+    const activeInstance = await res.json();
+    if (!activeInstance) {
+      console.log("Nenhuma instância ativa encontrada");
+      return;
+    }
+
+    console.log("Instância ativa encontrada:", activeInstance.name);
+
+    // Carregar grupos apenas se necessário
+    const res2 = await fetch(`/api/chats`);
+
+    if (!res2.ok) {
+      console.log("Erro ao carregar grupos:", res2.status);
+      return;
+    }
+
+    const data = await res2.json();
+    if (data && Array.isArray(data.chats)) {
+      const map = {};
+      data.chats.forEach((c) => {
+        if (c && c.id && c.name) {
+          map[c.id] = c.name;
+        }
+      });
+      groupsMap = map;
+      console.log(
+        `Cache de grupos atualizado: ${Object.keys(map).length} grupos`
+      );
+    }
+  } catch (e) {
+    console.error("Erro ao carregar cache de grupos:", e);
+    // Não mostrar erro para o usuário pois é apenas cache
   }
 }
 
@@ -314,21 +427,32 @@ async function loadConfig() {
 async function handleScheduleSubmit(event) {
   event.preventDefault();
 
-  const rawPhone = document.getElementById("phone").value.trim();
-  const phone = rawPhone.includes("@g.us")
-    ? rawPhone
-    : rawPhone.replace(/\D/g, "");
-  const message = document.getElementById("message").value;
-  const scheduledTime = document.getElementById("scheduledTime").value;
-
-  console.log("Dados do formulário:", { phone, message, scheduledTime });
-
-  if (!phone || !message || !scheduledTime) {
-    showToast("Todos os campos são obrigatórios", "error");
-    return;
-  }
-
   try {
+    // Verificar se tem instância conectada
+    const instanceRes = await fetch("/api/instance");
+    if (!instanceRes.ok) throw new Error("Falha ao verificar instância");
+    const instance = await instanceRes.json();
+
+    if (!instance?.instance_connected) {
+      showToast("Conecte seu WhatsApp antes de agendar mensagens", "error");
+      showSection("instances");
+      return;
+    }
+
+    const rawPhone = document.getElementById("phone").value.trim();
+    const phone = rawPhone.includes("@g.us")
+      ? rawPhone
+      : rawPhone.replace(/\D/g, "");
+    const message = document.getElementById("message").value;
+    const scheduledTime = document.getElementById("scheduledTime").value;
+
+    console.log("Dados do formulário:", { phone, message, scheduledTime });
+
+    if (!phone || !message || !scheduledTime) {
+      showToast("Todos os campos são obrigatórios", "error");
+      return;
+    }
+
     const payload = {
       phone,
       message,
@@ -372,43 +496,7 @@ async function handleScheduleSubmit(event) {
   }
 }
 
-// Handler para envio do formulário de configuração
-async function handleConfigSubmit(event) {
-  event.preventDefault();
-
-  const evolutionApiUrl = document.getElementById("evolutionApiUrl").value;
-  const token = document.getElementById("token").value;
-  const instanceName = document.getElementById("instanceName").value;
-
-  if (!evolutionApiUrl || !token || !instanceName) {
-    showToast("Todos os campos são obrigatórios", "error");
-    return;
-  }
-
-  try {
-    const response = await fetch("/api/config", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        evolutionApiUrl,
-        token,
-        instanceName,
-      }),
-    });
-
-    if (response.ok) {
-      showToast("Configuração salva com sucesso!");
-    } else {
-      const error = await response.json();
-      showToast(error.error || "Erro ao salvar configuração", "error");
-    }
-  } catch (error) {
-    console.error("Erro ao salvar configuração:", error);
-    showToast("Erro ao salvar configuração", "error");
-  }
-}
+// Função handleConfigSubmit removida - configuração agora é por usuário via modais
 
 // Função para testar conexão com Evolution API
 async function testConnection() {
@@ -541,11 +629,6 @@ async function loadUsers() {
             </div>
           </div>
           <div class="btn-group btn-group-sm">
-            <button class="btn btn-outline-info" onclick="openUserConfigModal(${
-              u.id
-            }, '${u.username}')" title="Configurações">
-              <i class="fas fa-cog"></i>
-            </button>
             <button class="btn btn-outline-primary" onclick="editUser(${
               u.id
             }, '${u.username}', '${u.role}')" title="Editar">
@@ -578,41 +661,21 @@ async function loadUsers() {
 function openCreateUserModal() {
   // Limpar formulário
   document.getElementById("createUserForm").reset();
-  document.getElementById("forcePasswordChange").checked = true;
 
   // Abrir modal
   const modal = new bootstrap.Modal(document.getElementById("createUserModal"));
   modal.show();
 }
 
-// Gerar senha aleatória
-function generateRandomPassword() {
-  const chars =
-    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*";
-  let password = "";
-  for (let i = 0; i < 12; i++) {
-    password += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  document.getElementById("modalPassword").value = password;
-}
-
 // Criar usuário a partir do modal
 async function createUserFromModal() {
   try {
     const username = document.getElementById("modalUsername").value.trim();
-    const password = document.getElementById("modalPassword").value.trim();
     const role = document.getElementById("modalRole").value;
-    const forcePasswordChange = document.getElementById(
-      "forcePasswordChange"
-    ).checked;
 
     // Validações
     if (username.length < 3) {
       showToast("Usuário deve ter pelo menos 3 caracteres", "error");
-      return;
-    }
-    if (password.length < 6) {
-      showToast("Senha deve ter pelo menos 6 caracteres", "error");
       return;
     }
 
@@ -622,9 +685,7 @@ async function createUserFromModal() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         username,
-        password,
         role,
-        forcePasswordChange,
       }),
     });
 
@@ -641,119 +702,46 @@ async function createUserFromModal() {
     );
     modal.hide();
 
-    showToast(`Usuário "${username}" criado com sucesso!`, "success");
+    // Mostrar senha temporária
+    console.log("Resposta do servidor:", newUser);
+    if (newUser.temporaryPassword) {
+      console.log("Senha temporária encontrada:", newUser.temporaryPassword);
+      showToast(
+        `Usuário "${username}" criado com sucesso! Senha temporária: ${newUser.temporaryPassword}`,
+        "success"
+      );
+
+      // Mostrar modal com a senha temporária
+      const passwordModal = new bootstrap.Modal(
+        document.getElementById("temporaryPasswordModal")
+      );
+
+      const usernameElement = document.getElementById("tempPasswordUsername");
+      const passwordElement = document.getElementById("tempPasswordValue");
+
+      console.log("Elementos encontrados:", {
+        usernameElement: !!usernameElement,
+        passwordElement: !!passwordElement,
+      });
+
+      if (usernameElement) {
+        usernameElement.textContent = username;
+      }
+
+      if (passwordElement) {
+        passwordElement.value = newUser.temporaryPassword;
+      }
+
+      passwordModal.show();
+    } else {
+      console.log("Nenhuma senha temporária encontrada na resposta");
+      showToast(`Usuário "${username}" criado com sucesso!`, "success");
+    }
+
     loadUsers();
   } catch (e) {
     console.error("Erro ao criar usuário:", e);
     showToast("Erro ao criar usuário: " + e.message, "error");
-  }
-}
-
-// Abrir modal de configurações do usuário
-async function openUserConfigModal(userId, username) {
-  try {
-    // Carregar configuração atual do usuário
-    const res = await fetch(`/api/admin/users/${userId}/config`);
-    if (res.ok) {
-      const config = await res.json();
-      document.getElementById("configApiUrl").value =
-        config.evolutionApiUrl || "";
-      document.getElementById("configToken").value = config.token || "";
-      document.getElementById("configInstance").value =
-        config.instanceName || "";
-    } else {
-      // Limpar campos se não há configuração
-      document.getElementById("configApiUrl").value = "";
-      document.getElementById("configToken").value = "";
-      document.getElementById("configInstance").value = "";
-    }
-
-    // Configurar modal
-    document.getElementById("configUserId").value = userId;
-    document.getElementById("configUserName").textContent = username;
-
-    // Abrir modal
-    const modal = new bootstrap.Modal(
-      document.getElementById("userConfigModal")
-    );
-    modal.show();
-  } catch (e) {
-    console.error("Erro ao carregar configuração:", e);
-    showToast("Erro ao carregar configuração do usuário", "error");
-  }
-}
-
-// Salvar configuração do usuário a partir do modal
-async function saveUserConfigFromModal() {
-  try {
-    const userId = document.getElementById("configUserId").value;
-    const evolutionApiUrl = document
-      .getElementById("configApiUrl")
-      .value.trim();
-    const token = document.getElementById("configToken").value.trim();
-    const instanceName = document.getElementById("configInstance").value.trim();
-
-    if (!userId || !evolutionApiUrl || !token || !instanceName) {
-      showToast("Todos os campos são obrigatórios", "error");
-      return;
-    }
-
-    showToast("Salvando configuração...", "info");
-    const res = await fetch(`/api/admin/users/${userId}/config`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ evolutionApiUrl, token, instanceName }),
-    });
-
-    if (!res.ok) {
-      const error = await res.json();
-      throw new Error(error.error || "Falha ao salvar configuração");
-    }
-
-    // Fechar modal
-    const modal = bootstrap.Modal.getInstance(
-      document.getElementById("userConfigModal")
-    );
-    modal.hide();
-
-    showToast("Configuração salva com sucesso!", "success");
-  } catch (e) {
-    console.error("Erro ao salvar configuração:", e);
-    showToast("Erro ao salvar configuração: " + e.message, "error");
-  }
-}
-
-// Testar conexão da Evolution API para o usuário
-async function testUserConnection() {
-  try {
-    const userId = document.getElementById("configUserId").value;
-    const evolutionApiUrl = document
-      .getElementById("configApiUrl")
-      .value.trim();
-    const token = document.getElementById("configToken").value.trim();
-    const instanceName = document.getElementById("configInstance").value.trim();
-
-    if (!userId || !evolutionApiUrl || !token || !instanceName) {
-      showToast("Preencha todos os campos antes de testar", "error");
-      return;
-    }
-
-    showToast("Testando conexão...", "info");
-    const res = await fetch(`/api/admin/users/${userId}/test-connection`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ evolutionApiUrl, token, instanceName }),
-    });
-
-    if (res.ok) {
-      showToast("Conexão testada com sucesso!", "success");
-    } else {
-      const error = await res.json();
-      throw new Error(error.error || "Falha na conexão");
-    }
-  } catch (e) {
-    console.error("Erro ao testar conexão:", e);
-    showToast("Erro ao testar conexão: " + e.message, "error");
   }
 }
 
@@ -938,60 +926,19 @@ let chatSelectorModal;
 let currentPage = 1;
 let hasMoreChats = true;
 
-// Variáveis globais para filtros (apenas busca por texto)
-let chatFilters = {
-  searchTerm: "",
-};
+// Função simplificada para filtrar grupos
+function filterChats() {
+  const searchTerm = document
+    .getElementById("chatSearchInput")
+    .value.toLowerCase();
 
-// Função para aplicar filtros aos chats
-function applyChatFilters(chats) {
-  let filteredChats = [...chats];
+  if (!allChats || allChats.length === 0) return;
 
-  // Filtrar por termo de busca
-  if (chatFilters.searchTerm) {
-    const searchTerm = chatFilters.searchTerm.toLowerCase();
-    filteredChats = filteredChats.filter((chat) => {
-      const name = (chat.name || "").toLowerCase();
-      const id = (chat.id || "").toLowerCase();
-      return name.includes(searchTerm) || id.includes(searchTerm);
-    });
-  }
+  const filteredChats = allChats.filter(
+    (chat) => chat.name && chat.name.toLowerCase().includes(searchTerm)
+  );
 
-  return filteredChats;
-}
-
-// Função para atualizar filtros
-function updateChatFilters() {
-  const searchInput = document.getElementById("chatSearchInput");
-  if (searchInput) {
-    chatFilters.searchTerm = searchInput.value;
-  }
-
-  // Recarregar chats com filtros aplicados
-  if (allChats.length > 0) {
-    const filteredChats = applyChatFilters(allChats);
-    displayChats(filteredChats, hasMoreChats);
-  }
-}
-
-// Função placeholder (filtros removidos)
-function toggleFilter() {}
-
-// Função para resetar filtros (apenas texto)
-function resetChatFilters() {
-  chatFilters = {
-    searchTerm: "",
-  };
-
-  // Limpar campo de busca
-  const searchInput = document.getElementById("chatSearchInput");
-  if (searchInput) searchInput.value = "";
-
-  // Recarregar chats
-  if (allChats.length > 0) {
-    const filteredChats = applyChatFilters(allChats);
-    displayChats(filteredChats, hasMoreChats);
-  }
+  displayChats(filteredChats);
 }
 
 // Função para abrir o seletor de conversas
@@ -1004,11 +951,9 @@ function openChatSelector() {
     );
   }
 
-  // Resetar filtros e variáveis
-  resetChatFilters();
-  currentPage = 1;
-  hasMoreChats = true;
-  allChats = [];
+  // Limpar campo de busca
+  const searchInput = document.getElementById("chatSearchInput");
+  if (searchInput) searchInput.value = "";
 
   // Limpar lista
   const chatsList = document.getElementById("chatsList");
@@ -1023,7 +968,7 @@ function openChatSelector() {
   loadChats();
 }
 
-// Função para carregar conversas da Evolution API
+// Carregar conversas/grupos
 async function loadChats() {
   try {
     const chatsList = document.getElementById("chatsList");
@@ -1034,327 +979,161 @@ async function loadChats() {
       </div>
     `;
 
-    // Primeiro limpar cache e verificar se a configuração está completa
-    await fetch("/api/config/clear-cache");
+    // Verificar se tem instância conectada
+    const instanceRes = await fetch("/api/instance");
+    if (!instanceRes.ok) throw new Error("Falha ao verificar instância");
+    const instance = await instanceRes.json();
 
-    const configResponse = await fetch("/api/config/status");
-    const configStatus = await configResponse.json();
-
-    if (!configStatus.hasConfig) {
-      throw new Error(
-        "Configuração da Evolution API incompleta. Configure a API primeiro na seção Configuração."
-      );
+    if (!instance?.instance_connected) {
+      chatsList.innerHTML = `
+        <div class="text-center text-warning py-5">
+          <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+          <h5>WhatsApp não conectado</h5>
+          <p class="text-muted mb-4">
+            Conecte seu WhatsApp para poder selecionar grupos.
+          </p>
+          <a href="#" onclick="showSection('instances')" class="btn btn-primary">
+            <i class="fas fa-plug me-1"></i>
+            Conectar WhatsApp
+          </a>
+        </div>
+      `;
+      return;
     }
 
-    const response = await fetch(
-      `/api/chats?page=${currentPage}&_t=${Date.now()}`,
-      {
-        headers: {
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          Pragma: "no-cache",
-        },
+    const res = await fetch(`/api/chats`);
+    if (!res.ok) {
+      throw new Error(`Erro ${res.status}: ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    if (!data.success) {
+      throw new Error(data.error || "Erro desconhecido");
+    }
+
+    const chats = data.chats || [];
+
+    // Atualizar cache de grupos para exibição nas mensagens
+    const map = {};
+    chats.forEach((c) => {
+      if (c && c.id && c.name) {
+        map[c.id] = c.name;
       }
-    );
+    });
+    groupsMap = map;
 
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || "Erro ao carregar conversas");
-    }
+    // Atualizar variável global para pesquisa
+    allChats = chats;
 
-    const result = await response.json();
-
-    // Cachear grupos: guardar no groupsMap
-    if (result && Array.isArray(result.chats)) {
-      const map = { ...groupsMap };
-      result.chats.forEach((g) => {
-        if (g && g.id && g.name) {
-          map[g.id] = g.name;
-        }
-      });
-      groupsMap = map;
-    }
-
-    // Como agora grupos vêm todos de uma vez, sempre substituir a lista
-    allChats = result.chats;
-
-    hasMoreChats = result.hasMore;
-    currentPage = result.currentPage;
-
-    displayChats(allChats, result.hasMore);
-  } catch (error) {
-    console.error("Erro ao carregar conversas:", error);
+    displayChats(chats);
+  } catch (e) {
+    console.error("Erro ao carregar grupos:", e);
     const chatsList = document.getElementById("chatsList");
 
-    let errorMessage = error.message;
-    let showConfigButton = false;
-
-    if (error.message.includes("Configuração da Evolution API incompleta")) {
-      showConfigButton = true;
+    let errorMessage = e.message;
+    if (e.message.includes("timeout") || e.message.includes("Timeout")) {
       errorMessage =
-        "Configure a Evolution API primeiro para usar esta funcionalidade.";
+        "O WhatsApp está demorando para responder. Tente novamente em alguns instantes.";
+    } else if (
+      e.message.includes("ECONNREFUSED") ||
+      e.message.includes("ENOTFOUND")
+    ) {
+      errorMessage =
+        "Não foi possível conectar ao WhatsApp. Verifique sua conexão.";
+    } else if (e.message.includes("401")) {
+      errorMessage = "Erro de autenticação. Tente reconectar seu WhatsApp.";
+    } else if (e.message.includes("404")) {
+      errorMessage = "WhatsApp não encontrado. Tente reconectar.";
     }
 
     chatsList.innerHTML = `
-      <div class="text-center text-danger">
-        <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
-        <p>Erro ao carregar grupos</p>
-        <small>${errorMessage}</small>
-        <br><br>
-        ${
-          showConfigButton
-            ? `<button class="btn btn-primary btn-sm me-2" onclick="showSection('config')">
-            <i class="fas fa-cog me-1"></i>
-            Ir para Configuração
-          </button>`
-            : ""
-        }
-        <button class="btn btn-outline-primary btn-sm me-2" onclick="reloadGroups()">
+      <div class="text-center text-danger py-5">
+        <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+        <h5>Erro ao carregar grupos</h5>
+        <p class="text-danger mb-4">${errorMessage}</p>
+        <button class="btn btn-primary" onclick="loadChats()">
           <i class="fas fa-sync-alt me-1"></i>
-          Tentar novamente
-        </button>
-        <button class="btn btn-outline-warning btn-sm" onclick="clearCacheAndRetry()">
-          <i class="fas fa-broom me-1"></i>
-          Limpar Cache
+          Tentar Novamente
         </button>
       </div>
     `;
   }
 }
 
-// Função para exibir conversas
-function displayChats(chats, hasMore = false) {
+// Exibir conversas/grupos
+function displayChats(chats) {
   const chatsList = document.getElementById("chatsList");
 
-  // Aplicar filtros aos chats
-  const filteredChats = applyChatFilters(chats);
-
-  if (!filteredChats || filteredChats.length === 0) {
+  if (!chats || chats.length === 0) {
     chatsList.innerHTML = `
-      <div class="text-center text-muted">
-        <i class="fas fa-comments fa-3x mb-3"></i>
-        <p>Nenhum grupo encontrado</p>
-        <small>${
-          chats.length > 0
-            ? "Tente ajustar a busca"
-            : "Verifique se sua instância está conectada"
-        }</small>
+      <div class="text-center text-muted py-5">
+        <i class="fas fa-users fa-3x mb-3"></i>
+        <h5>Nenhum grupo encontrado</h5>
+        <p class="mb-4">
+          Você precisa ser administrador de pelo menos um grupo no WhatsApp.
+        </p>
+        <a href="https://faq.whatsapp.com/android/groups/how-to-create-and-manage-groups" target="_blank" class="btn btn-outline-primary">
+          <i class="fas fa-question-circle me-1"></i>
+          Como criar grupos?
+        </a>
       </div>
     `;
     return;
   }
 
-  // Adicionar cabeçalho com contagem (somente grupos nesta UI)
-  const groupsCount = filteredChats.length;
-  const contactsCount = 0;
-
-  const headerHtml = `
-    <div class="alert alert-info mb-3">
-      <i class="fas fa-info-circle me-2"></i>
-      <strong>${filteredChats.length}</strong> grupos encontrados
-    </div>
-  `;
-
-  const chatsHtml = filteredChats
-    .map((chat) => {
-      const isGroup =
-        (chat.type && String(chat.type).toLowerCase() === "group") ||
-        (chat.id && chat.id.includes("@g.us"));
-      const chatName = chat.name || chat.id || "Conversa sem nome";
-      const chatId = chat.id;
-
-      // Informações adicionais se disponíveis
-      const lastMessage = chat.lastMessage || "";
-      const timestamp = chat.updatedAt
-        ? new Date(chat.updatedAt).toLocaleString("pt-BR")
-        : chat.timestamp
-        ? new Date(chat.timestamp).toLocaleString("pt-BR")
-        : "";
-
-      const profilePic = chat.profilePicUrl
-        ? `<img src="${chat.profilePicUrl}" class="rounded-circle me-3" width="40" height="40" alt="Foto de perfil">`
-        : `<div class="me-3">
-          <i class="fas ${
-            isGroup ? "fa-users text-primary" : "fa-user text-success"
-          } fa-lg"></i>
-        </div>`;
-
-      return `
-      <div class="card mb-2 chat-item" data-chat-id="${chatId}" data-chat-name="${chatName}">
-        <div class="card-body p-3">
-          <div class="d-flex align-items-center">
-            ${profilePic}
-            <div class="flex-grow-1">
-              <h6 class="mb-1">${chatName}</h6>
-              <small class="text-muted">Grupo</small>
-              ${
-                lastMessage
-                  ? `<br><small class="text-muted">${lastMessage.substring(
-                      0,
-                      50
-                    )}${lastMessage.length > 50 ? "..." : ""}</small>`
-                  : ""
-              }
-              
-            </div>
-            <div>
-              <button 
-                class="btn btn-primary btn-sm" 
-                onclick="selectChat('${chatId}', '${chatName}', ${isGroup})"
-                title="Selecionar esta conversa"
-              >
-                <i class="fas fa-check"></i>
-                Selecionar
-              </button>
+  const chatItems = chats
+    .map(
+      (chat) => `
+        <div class="chat-item card mb-3 cursor-pointer" onclick="selectChat('${
+          chat.id
+        }', '${chat.name}')">
+          <div class="card-body">
+            <div class="d-flex align-items-center">
+              <div class="flex-shrink-0 me-3">
+                <div class="chat-avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 50px; height: 50px;">
+                  <i class="fas fa-users"></i>
+                </div>
+              </div>
+              <div class="flex-grow-1">
+                <h6 class="mb-1">${chat.name}</h6>
+                <small class="text-muted">
+                  <i class="fas fa-users me-1"></i>
+                  Grupo
+                  ${chat.size ? ` • ${chat.size} membros` : ""}
+                </small>
+              </div>
+              <div class="flex-shrink-0">
+                <button class="btn btn-primary btn-sm">
+                  <i class="fas fa-check me-1"></i>
+                  Selecionar
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    `;
-    })
+      `
+    )
     .join("");
 
-  // Adicionar botão "Carregar mais" se houver mais páginas
-  let loadMoreButton = "";
-  if (hasMore) {
-    loadMoreButton = `
-      <div class="text-center mt-3">
-        <button class="btn btn-outline-primary" onclick="loadMoreChats()">
-          <i class="fas fa-plus me-2"></i>
-          Carregar mais conversas
-        </button>
-      </div>
-    `;
-  }
-
-  chatsList.innerHTML = headerHtml + chatsHtml + loadMoreButton;
-}
-
-// Função para filtrar conversas
-function filterChats() {
-  updateChatFilters();
-}
-
-// Botão de recarregar grupos no modal
-function reloadGroups() {
-  // limpar cache e recarregar
-  groupsMap = {};
-  currentPage = 1;
-  hasMoreChats = true;
-  allChats = [];
-  // Forçar refresh no backend (ignorar cache server-side)
-  loadChatsWithRefresh();
-}
-
-async function loadChatsWithRefresh() {
-  try {
-    const chatsList = document.getElementById("chatsList");
-    chatsList.innerHTML = `
-      <div class="text-center text-muted">
-        <i class="fas fa-spinner fa-spin fa-2x mb-3"></i>
-        <p>Carregando grupos...</p>
-      </div>
-    `;
-
-    await fetch("/api/config/clear-cache");
-
-    const response = await fetch(`/api/chats?refresh=true&_t=${Date.now()}`, {
-      headers: {
-        "Cache-Control": "no-cache, no-store, must-revalidate",
-        Pragma: "no-cache",
-      },
-    });
-    const result = await response.json();
-    if (result && Array.isArray(result.chats)) {
-      const map = { ...groupsMap };
-      result.chats.forEach((g) => {
-        if (g && g.id && g.name) {
-          map[g.id] = g.name;
-        }
-      });
-      groupsMap = map;
-    }
-    allChats = result.chats || [];
-    hasMoreChats = false;
-    currentPage = 1;
-    displayChats(allChats, false);
-  } catch (e) {
-    // fallback
-    loadChats();
-  }
-}
-
-// Função para carregar mais conversas (desabilitada para grupos completos)
-async function loadMoreChats() {
-  if (!hasMoreChats) return;
-
-  try {
-    currentPage++;
-    const response = await fetch(
-      `/api/chats?page=${currentPage}&_t=${Date.now()}`,
-      {
-        headers: {
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          Pragma: "no-cache",
-        },
-      }
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.error || "Erro ao carregar mais conversas");
-    }
-
-    const result = await response.json();
-
-    // Adicionar novas conversas ao final
-    allChats = allChats.concat(result.chats);
-    hasMoreChats = result.hasMore;
-    currentPage = result.currentPage;
-
-    // Atualizar a exibição
-    displayChats(allChats, result.hasMore);
-
-    showToast(`${result.chats.length} conversas adicionadas!`, "success");
-  } catch (error) {
-    console.error("Erro ao carregar mais conversas:", error);
-    showToast("Erro ao carregar mais conversas", "error");
-    currentPage--; // Reverter a página em caso de erro
-  }
-}
-
-// Função para limpar cache e tentar novamente
-async function clearCacheAndRetry() {
-  try {
-    await fetch("/api/config/clear-cache");
-    showToast("Cache limpo! Tentando carregar conversas...", "warning");
-    await loadChats();
-  } catch (error) {
-    console.error("Erro ao limpar cache:", error);
-    showToast("Erro ao limpar cache", "error");
-  }
+  chatsList.innerHTML = `
+    <div class="mb-3">
+      <h6 class="text-muted">
+        <i class="fas fa-users me-2"></i>
+        ${chats.length} grupos encontrados
+      </h6>
+    </div>
+    ${chatItems}
+  `;
 }
 
 // Função para selecionar uma conversa
-function selectChat(chatId, chatName, isGroupParam) {
-  // Extrair o número do telefone do ID da conversa
-  // Para conversas individuais: 5511999999999@s.whatsapp.net
-  // Para grupos: o ID do grupo permanece como está
+function selectChat(chatId, chatName) {
+  // Para grupos, garantir sufixo @g.us
   let phoneNumber = chatId;
-
-  const appearsGroup =
-    (typeof isGroupParam !== "undefined" && !!isGroupParam) ||
-    (chatId && chatId.includes("@g.us"));
-
-  if (chatId && chatId.includes("@s.whatsapp.net")) {
-    // É uma conversa individual, extrair o número
-    phoneNumber = chatId.split("@")[0];
-  } else if (appearsGroup) {
-    // É um grupo, garantir sufixo @g.us
-    phoneNumber =
-      chatId && chatId.includes("@g.us") ? chatId : `${chatId}@g.us`;
-  } else if (chatId && !chatId.includes("@")) {
-    // Pode ser um número simples, usar como está
+  if (chatId && chatId.includes("@g.us")) {
     phoneNumber = chatId;
+  } else if (chatId && !chatId.includes("@")) {
+    phoneNumber = `${chatId}@g.us`;
   }
 
   // Preencher o campo de telefone
@@ -1366,8 +1145,16 @@ function selectChat(chatId, chatName, isGroupParam) {
   }
 
   // Mostrar toast de confirmação
-  const typeText = appearsGroup ? "Grupo" : "Contato";
-  showToast(`${typeText} selecionado: ${chatName}`, "success");
+  showToast(`Grupo "${chatName}" selecionado com sucesso!`, "success");
+
+  // Focar no campo de mensagem
+  document.getElementById("message").focus();
+}
+
+// Função para recarregar grupos
+function reloadGroups() {
+  groupsMap = {}; // Limpar cache
+  loadChats();
 }
 
 // Atualizar estatísticas do painel admin
@@ -1398,3 +1185,750 @@ async function loadTotalMessages() {
     document.getElementById("totalMessages").textContent = "-";
   }
 }
+
+// Função para mostrar modal de alteração de senha
+function showChangePasswordModal() {
+  const modal = new bootstrap.Modal(
+    document.getElementById("changePasswordModal")
+  );
+  modal.show();
+}
+
+// Função para alterar senha do modal obrigatório
+async function changePasswordFromModal() {
+  try {
+    const newPassword = document.getElementById("newPassword").value.trim();
+    const confirmPassword = document
+      .getElementById("confirmPassword")
+      .value.trim();
+
+    // Validações
+    if (newPassword.length < 6) {
+      showToast("Nova senha deve ter pelo menos 6 caracteres", "error");
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      showToast("As senhas não coincidem", "error");
+      return;
+    }
+
+    showToast("Alterando senha...", "info");
+
+    const res = await fetch("/api/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        currentPassword: "", // Não precisamos da senha atual para usuários com forcePasswordChange
+        newPassword: newPassword,
+      }),
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Falha ao alterar senha");
+    }
+
+    // Fechar modal
+    const modal = bootstrap.Modal.getInstance(
+      document.getElementById("changePasswordModal")
+    );
+    modal.hide();
+
+    showToast("Senha alterada com sucesso!", "success");
+
+    // Inicializar aplicação após alteração de senha
+    loadConfig();
+    loadMessages();
+  } catch (e) {
+    console.error("Erro ao alterar senha:", e);
+    showToast("Erro ao alterar senha: " + e.message, "error");
+  }
+}
+
+// Função para copiar texto para a área de transferência
+function copyToClipboard(elementId) {
+  const element = document.getElementById(elementId);
+  if (element) {
+    element.select();
+    element.setSelectionRange(0, 99999); // Para dispositivos móveis
+    document.execCommand("copy");
+    showToast("Senha copiada para a área de transferência!", "success");
+  }
+}
+
+// Funções para gerenciar configuração global
+async function loadGlobalConfig() {
+  try {
+    // Mostrar loading
+    document.getElementById("evolutionApiUrl").disabled = true;
+    document.getElementById("evolutionApiToken").disabled = true;
+    document.getElementById("evolutionApiUrl").placeholder = "Carregando...";
+    document.getElementById("evolutionApiToken").placeholder = "Carregando...";
+
+    const res = await fetch("/api/admin/config");
+    if (!res.ok) throw new Error("Falha ao carregar configuração");
+    const config = await res.json();
+
+    // Habilitar campos
+    document.getElementById("evolutionApiUrl").disabled = false;
+    document.getElementById("evolutionApiToken").disabled = false;
+    document.getElementById("evolutionApiUrl").placeholder =
+      "http://localhost:8080";
+    document.getElementById("evolutionApiToken").placeholder = "Sua API Key";
+
+    if (config) {
+      document.getElementById("evolutionApiUrl").value =
+        config.evolution_api_url || "";
+      document.getElementById("evolutionApiToken").value =
+        config.evolution_api_token || "";
+
+      // Testar conexão automaticamente
+      if (config.evolution_api_url && config.evolution_api_token) {
+        testGlobalConfig();
+      }
+    }
+  } catch (e) {
+    console.error("Erro ao carregar configuração global:", e);
+    showToast("Erro ao carregar configuração: " + e.message, "error");
+
+    // Habilitar campos
+    document.getElementById("evolutionApiUrl").disabled = false;
+    document.getElementById("evolutionApiToken").disabled = false;
+    document.getElementById("evolutionApiUrl").placeholder =
+      "http://localhost:8080";
+    document.getElementById("evolutionApiToken").placeholder = "Sua API Key";
+  }
+}
+
+async function testGlobalConfig() {
+  try {
+    const evolutionApiUrl = document
+      .getElementById("evolutionApiUrl")
+      .value.trim();
+    const evolutionApiToken = document
+      .getElementById("evolutionApiToken")
+      .value.trim();
+
+    if (!evolutionApiUrl || !evolutionApiToken) {
+      showToast("Preencha todos os campos antes de testar", "error");
+      return;
+    }
+
+    // Desabilitar botões
+    const testButton = document.querySelector(
+      'button[onclick="testGlobalConfig()"]'
+    );
+    const saveButton = document.querySelector(
+      'button[onclick="saveGlobalConfig()"]'
+    );
+    testButton.disabled = true;
+    saveButton.disabled = true;
+    testButton.innerHTML =
+      '<i class="fas fa-spinner fa-spin me-1"></i> Testando...';
+
+    showToast("Testando conexão com a Evolution API...", "info");
+
+    const res = await fetch("/api/admin/config/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        evolution_api_url: evolutionApiUrl,
+        evolution_api_token: evolutionApiToken,
+      }),
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Falha ao testar conexão");
+    }
+
+    const result = await res.json();
+    if (result.success) {
+      showToast(
+        `Conexão testada com sucesso! ${result.message || ""}`,
+        "success"
+      );
+    } else {
+      throw new Error(result.error || "Falha ao testar conexão");
+    }
+
+    // Habilitar botões
+    testButton.disabled = false;
+    saveButton.disabled = false;
+    testButton.innerHTML = '<i class="fas fa-wifi me-1"></i> Testar Conexão';
+  } catch (e) {
+    console.error("Erro ao testar conexão:", e);
+    showToast("Erro ao testar conexão: " + e.message, "error");
+
+    // Habilitar botões
+    const testButton = document.querySelector(
+      'button[onclick="testGlobalConfig()"]'
+    );
+    const saveButton = document.querySelector(
+      'button[onclick="saveGlobalConfig()"]'
+    );
+    testButton.disabled = false;
+    saveButton.disabled = false;
+    testButton.innerHTML = '<i class="fas fa-wifi me-1"></i> Testar Conexão';
+  }
+}
+
+async function saveGlobalConfig() {
+  try {
+    const evolutionApiUrl = document
+      .getElementById("evolutionApiUrl")
+      .value.trim();
+    const evolutionApiToken = document
+      .getElementById("evolutionApiToken")
+      .value.trim();
+
+    if (!evolutionApiUrl || !evolutionApiToken) {
+      showToast("Todos os campos são obrigatórios", "error");
+      return;
+    }
+
+    // Desabilitar botões e campos
+    const testButton = document.querySelector(
+      'button[onclick="testGlobalConfig()"]'
+    );
+    const saveButton = document.querySelector(
+      'button[onclick="saveGlobalConfig()"]'
+    );
+    const urlInput = document.getElementById("evolutionApiUrl");
+    const tokenInput = document.getElementById("evolutionApiToken");
+
+    testButton.disabled = true;
+    saveButton.disabled = true;
+    urlInput.disabled = true;
+    tokenInput.disabled = true;
+    saveButton.innerHTML =
+      '<i class="fas fa-spinner fa-spin me-1"></i> Salvando...';
+
+    showToast("Salvando configuração...", "info");
+
+    const res = await fetch("/api/admin/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        evolution_api_url: evolutionApiUrl,
+        evolution_api_token: evolutionApiToken,
+      }),
+    });
+
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Falha ao salvar configuração");
+    }
+
+    showToast("Configuração salva com sucesso!", "success");
+
+    // Habilitar botões e campos
+    testButton.disabled = false;
+    saveButton.disabled = false;
+    urlInput.disabled = false;
+    tokenInput.disabled = false;
+    saveButton.innerHTML =
+      '<i class="fas fa-save me-1"></i> Salvar Configuração';
+
+    // Testar conexão automaticamente
+    testGlobalConfig();
+  } catch (e) {
+    console.error("Erro ao salvar configuração:", e);
+    showToast("Erro ao salvar configuração: " + e.message, "error");
+
+    // Habilitar botões e campos
+    const testButton = document.querySelector(
+      'button[onclick="testGlobalConfig()"]'
+    );
+    const saveButton = document.querySelector(
+      'button[onclick="saveGlobalConfig()"]'
+    );
+    const urlInput = document.getElementById("evolutionApiUrl");
+    const tokenInput = document.getElementById("evolutionApiToken");
+
+    testButton.disabled = false;
+    saveButton.disabled = false;
+    urlInput.disabled = false;
+    tokenInput.disabled = false;
+    saveButton.innerHTML =
+      '<i class="fas fa-save me-1"></i> Salvar Configuração';
+  }
+}
+
+// Funções para gerenciar instância do usuário
+async function loadInstanceStatus() {
+  try {
+    // Verificar se tem configuração global (se for admin)
+    if (window.isAdmin) {
+      const configRes = await fetch("/api/admin/config");
+      if (!configRes.ok) {
+        document.getElementById("noInstance").style.display = "block";
+        document.getElementById("noInstance").innerHTML = `
+          <div class="text-center text-warning py-5">
+            <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+            <h5>Configuração Necessária</h5>
+            <p class="text-muted mb-4">
+              Configure a Evolution API antes de conectar instâncias.
+            </p>
+            <button class="btn btn-primary" onclick="showSection('admin')">
+              <i class="fas fa-cog me-1"></i>
+              Configurar Evolution API
+            </button>
+          </div>
+        `;
+        return;
+      }
+
+      const config = await configRes.json();
+      if (!config?.evolution_api_url || !config?.evolution_api_token) {
+        document.getElementById("noInstance").style.display = "block";
+        document.getElementById("noInstance").innerHTML = `
+          <div class="text-center text-warning py-5">
+            <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+            <h5>Configuração Necessária</h5>
+            <p class="text-muted mb-4">
+              Configure a Evolution API antes de conectar instâncias.
+            </p>
+            <button class="btn btn-primary" onclick="showSection('admin')">
+              <i class="fas fa-cog me-1"></i>
+              Configurar Evolution API
+            </button>
+          </div>
+        `;
+        return;
+      }
+    }
+
+    const res = await fetch("/api/instance");
+    if (!res.ok) throw new Error("Falha ao carregar status da instância");
+    const instance = await res.json();
+
+    // Esconder todos os estados
+    document.getElementById("noInstance").style.display = "none";
+    document.getElementById("connecting").style.display = "none";
+    document.getElementById("connected").style.display = "none";
+    document.getElementById("error").style.display = "none";
+
+    if (!instance?.instance_name) {
+      // Sem instância
+      document.getElementById("noInstance").style.display = "block";
+      document.getElementById("noInstance").innerHTML = `
+        <div class="text-center py-5">
+          <i class="fas fa-plug text-muted fa-3x mb-3"></i>
+          <h5>Conecte seu WhatsApp</h5>
+          <p class="text-muted mb-4">
+            Você ainda não tem uma instância do WhatsApp conectada.
+            <br>
+            Clique no botão abaixo para começar.
+          </p>
+          <button class="btn btn-primary" onclick="createInstance()">
+            <i class="fas fa-qrcode me-1"></i>
+            Conectar WhatsApp
+          </button>
+        </div>
+      `;
+    } else if (instance.instance_status === "qr_ready") {
+      // QR Code disponível
+      createInstance();
+    } else if (instance.instance_connected) {
+      // Conectado
+      document.getElementById("connected").style.display = "block";
+      document.getElementById("connected").innerHTML = `
+        <div class="text-center py-5">
+          <i class="fas fa-check-circle text-success fa-3x mb-3"></i>
+          <h5>WhatsApp Conectado</h5>
+          <p class="text-muted mb-4">
+            Seu WhatsApp está conectado e pronto para uso.
+            <br>
+            Você já pode agendar mensagens.
+          </p>
+          <div class="d-flex justify-content-center gap-2">
+            <button class="btn btn-outline-danger" onclick="disconnectInstance()">
+              <i class="fas fa-power-off me-1"></i>
+              Desconectar
+            </button>
+            <button class="btn btn-outline-primary" onclick="refreshStatus()">
+              <i class="fas fa-sync-alt me-1"></i>
+              Atualizar Status
+            </button>
+            <button class="btn btn-primary" onclick="showSection('schedule')">
+              <i class="fas fa-calendar-plus me-1"></i>
+              Agendar Mensagem
+            </button>
+          </div>
+        </div>
+      `;
+    } else if (instance.instance_status === "connecting") {
+      // Conectando
+      document.getElementById("connecting").style.display = "block";
+      document.getElementById("connecting").innerHTML = `
+        <div class="text-center py-5">
+          <i class="fas fa-spinner fa-spin fa-3x mb-3"></i>
+          <h5>Conectando...</h5>
+          <p class="text-muted">
+            Aguarde enquanto configuramos sua instância.
+            <br>
+            Isso pode levar alguns segundos.
+          </p>
+          <div class="progress mb-3" style="height: 10px;">
+            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+          </div>
+        </div>
+      `;
+      // Verificar status a cada 5 segundos
+      setTimeout(loadInstanceStatus, 5000);
+    } else {
+      // Erro
+      document.getElementById("error").style.display = "block";
+      document.getElementById("error").innerHTML = `
+        <div class="text-center py-5">
+          <i class="fas fa-exclamation-triangle text-danger fa-3x mb-3"></i>
+          <h5>Erro na Conexão</h5>
+          <p class="text-danger mb-4">
+            Status: ${instance.instance_status || "Desconhecido"}
+          </p>
+          <button class="btn btn-primary" onclick="retryConnection()">
+            <i class="fas fa-sync-alt me-1"></i>
+            Tentar Novamente
+          </button>
+        </div>
+      `;
+    }
+  } catch (e) {
+    console.error("Erro ao carregar status da instância:", e);
+    document.getElementById("error").style.display = "block";
+    document.getElementById("error").innerHTML = `
+      <div class="text-center py-5">
+        <i class="fas fa-exclamation-triangle text-danger fa-3x mb-3"></i>
+        <h5>Erro ao Carregar Status</h5>
+        <p class="text-danger mb-4">${e.message}</p>
+        <button class="btn btn-primary" onclick="retryConnection()">
+          <i class="fas fa-sync-alt me-1"></i>
+          Tentar Novamente
+        </button>
+      </div>
+    `;
+  }
+}
+
+async function createInstance() {
+  try {
+    // Mostrar estado conectando
+    document.getElementById("noInstance").style.display = "none";
+    document.getElementById("connecting").style.display = "block";
+    document.getElementById("connecting").innerHTML = `
+      <div class="text-center py-5">
+        <i class="fas fa-spinner fa-spin fa-3x mb-3"></i>
+        <h5>Criando Instância...</h5>
+        <p class="text-muted">
+          Aguarde enquanto configuramos seu WhatsApp.
+          <br>
+          Isso pode levar alguns segundos.
+        </p>
+        <div class="progress mb-3" style="height: 10px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+        </div>
+      </div>
+    `;
+
+    showToast("Criando instância do WhatsApp...", "info");
+
+    const res = await fetch("/api/instance/create", { method: "POST" });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(
+        error.details || error.error || "Falha ao criar instância"
+      );
+    }
+
+    const data = await res.json();
+    if (!data.qrCode) {
+      throw new Error("QR Code não disponível");
+    }
+
+    showToast("Instância criada com sucesso!", "success");
+
+    // Aguardar um pouco para a instância ser criada
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+
+    // Mostrar QR Code
+    const modal = new bootstrap.Modal(document.getElementById("qrCodeModal"));
+    modal.show();
+
+    document.getElementById("qrCodeLoading").style.display = "none";
+    document.getElementById("qrCodeDisplay").style.display = "block";
+    document.getElementById("qrCodeDisplay").innerHTML = `
+      <div class="text-center">
+        <img src="${data.qrCode}" alt="QR Code" class="img-fluid mb-3" style="max-width: 300px;" />
+        <h5>Escaneie o QR Code</h5>
+        <p class="text-muted mb-4">
+          1. Abra o WhatsApp no seu celular
+          <br>
+          2. Toque em Menu <i class="fas fa-ellipsis-v"></i> ou Configurações <i class="fas fa-cog"></i>
+          <br>
+          3. Selecione "WhatsApp Web"
+          <br>
+          4. Aponte a câmera para este QR Code
+        </p>
+        <div class="alert alert-warning">
+          <i class="fas fa-clock me-2"></i>
+          Este QR Code expira em 60 segundos
+        </div>
+      </div>
+    `;
+
+    // Iniciar verificação de status
+    try {
+      await checkConnectionStatus();
+    } catch (error) {
+      console.error("Erro ao verificar status inicial:", error);
+      // Continua mesmo com erro no status inicial
+    }
+  } catch (e) {
+    console.error("Erro ao criar instância:", e);
+    document.getElementById("connecting").style.display = "none";
+    document.getElementById("error").style.display = "block";
+    document.getElementById("error").innerHTML = `
+      <div class="text-center py-5">
+        <i class="fas fa-exclamation-triangle text-danger fa-3x mb-3"></i>
+        <h5>Erro ao Criar Instância</h5>
+        <p class="text-danger mb-4">${e.message}</p>
+        <button class="btn btn-primary" onclick="retryConnection()">
+          <i class="fas fa-sync-alt me-1"></i>
+          Tentar Novamente
+        </button>
+      </div>
+    `;
+    showToast("Erro ao criar instância: " + e.message, "error");
+  }
+}
+
+async function checkConnectionStatus() {
+  try {
+    const res = await fetch("/api/instance");
+    if (!res.ok) throw new Error("Falha ao verificar status");
+    const data = await res.json();
+    console.log("Dados da instância:", JSON.stringify(data, null, 2));
+
+    if (data.instance_connected) {
+      // Conectado com sucesso
+      document.getElementById("qrCodeDisplay").style.display = "none";
+      document.getElementById("qrCodeSuccess").style.display = "block";
+      document.getElementById("qrCodeSuccess").innerHTML = `
+        <div class="text-center">
+          <i class="fas fa-check-circle text-success fa-3x mb-3"></i>
+          <h5>WhatsApp Conectado!</h5>
+          <p class="text-muted mb-4">
+            Seu WhatsApp foi conectado com sucesso.
+            <br>
+            Você já pode começar a agendar mensagens.
+          </p>
+          <button class="btn btn-primary" onclick="showSection('schedule')">
+            <i class="fas fa-calendar-plus me-1"></i>
+            Agendar Mensagem
+          </button>
+        </div>
+      `;
+
+      showToast("WhatsApp conectado com sucesso!", "success");
+
+      // Fechar modal após 2 segundos
+      setTimeout(() => {
+        const modal = bootstrap.Modal.getInstance(
+          document.getElementById("qrCodeModal")
+        );
+        modal.hide();
+        loadInstanceStatus(); // Atualizar status na tela principal
+      }, 2000);
+    } else if (
+      !data.instance_status ||
+      data.instance_status === "not_created"
+    ) {
+      // Instância não criada ainda, não fazer nada
+      console.log("Instância ainda não criada");
+      // Se o modal estiver aberto, continuar verificando
+      const modal = document.getElementById("qrCodeModal");
+      if (modal && modal.style.display === "block") {
+        setTimeout(checkConnectionStatus, 3000);
+      }
+      return;
+    } else if (
+      data.instance_status === "qr_ready" ||
+      data.instance_status === "created" ||
+      data.instance_status === "connecting"
+    ) {
+      // Continuar verificando a cada 3 segundos
+      setTimeout(checkConnectionStatus, 3000);
+    } else if (
+      data.instance_status === "waiting" ||
+      data.instance_status === "pending"
+    ) {
+      // Mostrar estado conectando
+      document.getElementById("qrCodeDisplay").style.display = "none";
+      document.getElementById("qrCodeSuccess").style.display = "none";
+      document.getElementById("qrCodeError").style.display = "none";
+      document.getElementById("qrCodeLoading").style.display = "block";
+      document.getElementById("qrCodeLoading").innerHTML = `
+        <div class="text-center">
+          <i class="fas fa-spinner fa-spin fa-3x mb-3"></i>
+          <h5>Conectando...</h5>
+          <p class="text-muted">
+            Aguarde enquanto estabelecemos a conexão.
+            <br>
+            Isso pode levar alguns segundos.
+          </p>
+          <div class="progress mb-3" style="height: 10px;">
+            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+          </div>
+        </div>
+      `;
+      // Continuar verificando a cada 3 segundos
+      setTimeout(checkConnectionStatus, 3000);
+    } else {
+      // Status desconhecido, continuar tentando
+      console.log("Status desconhecido:", data.instance_status);
+      setTimeout(checkConnectionStatus, 3000);
+    }
+  } catch (e) {
+    console.error("Erro ao verificar status:", e);
+    document.getElementById("qrCodeDisplay").style.display = "none";
+    document.getElementById("qrCodeError").style.display = "block";
+    document.getElementById("qrCodeError").innerHTML = `
+      <div class="text-center">
+        <i class="fas fa-exclamation-triangle text-danger fa-3x mb-3"></i>
+        <h5>Erro ao Verificar Status</h5>
+        <p class="text-danger mb-4">${e.message}</p>
+        <button class="btn btn-primary" onclick="retryQrCode()">
+          <i class="fas fa-sync-alt me-1"></i>
+          Tentar Novamente
+        </button>
+      </div>
+    `;
+    showToast("Erro ao verificar status: " + e.message, "error");
+  }
+}
+
+async function retryQrCode() {
+  document.getElementById("qrCodeError").style.display = "none";
+  createInstance();
+}
+
+async function retryConnection() {
+  document.getElementById("error").style.display = "none";
+  createInstance();
+}
+
+async function disconnectInstance() {
+  if (
+    !confirm(
+      "Tem certeza que deseja desconectar seu WhatsApp?\n\nVocê precisará escanear o QR Code novamente para reconectar."
+    )
+  ) {
+    return;
+  }
+
+  try {
+    // Mostrar loading
+    document.getElementById("connected").innerHTML = `
+      <div class="text-center py-5">
+        <i class="fas fa-spinner fa-spin fa-3x mb-3"></i>
+        <h5>Desconectando...</h5>
+        <p class="text-muted">
+          Aguarde enquanto desconectamos seu WhatsApp.
+          <br>
+          Isso pode levar alguns segundos.
+        </p>
+        <div class="progress mb-3" style="height: 10px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+        </div>
+      </div>
+    `;
+
+    showToast("Desconectando WhatsApp...", "info");
+
+    const res = await fetch("/api/instance", { method: "DELETE" });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Falha ao desconectar instância");
+    }
+
+    showToast("WhatsApp desconectado com sucesso!", "success");
+
+    // Aguardar um pouco antes de recarregar
+    setTimeout(() => {
+      loadInstanceStatus();
+    }, 1000);
+  } catch (e) {
+    console.error("Erro ao desconectar instância:", e);
+    showToast("Erro ao desconectar: " + e.message, "error");
+
+    // Mostrar erro
+    document.getElementById("connected").innerHTML = `
+      <div class="text-center py-5">
+        <i class="fas fa-exclamation-triangle text-danger fa-3x mb-3"></i>
+        <h5>Erro ao Desconectar</h5>
+        <p class="text-danger mb-4">${e.message}</p>
+        <button class="btn btn-primary" onclick="retryConnection()">
+          <i class="fas fa-sync-alt me-1"></i>
+          Tentar Novamente
+        </button>
+      </div>
+    `;
+  }
+}
+
+async function refreshStatus() {
+  try {
+    // Mostrar loading
+    const currentState = document.querySelector(
+      "#instanceStatus > div[style*='block']"
+    );
+    if (currentState) {
+      currentState.innerHTML = `
+        <div class="text-center py-5">
+          <i class="fas fa-spinner fa-spin fa-3x mb-3"></i>
+          <h5>Atualizando Status...</h5>
+          <p class="text-muted">
+            Aguarde enquanto verificamos o status do WhatsApp.
+            <br>
+            Isso pode levar alguns segundos.
+          </p>
+          <div class="progress mb-3" style="height: 10px;">
+            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+          </div>
+        </div>
+      `;
+    }
+
+    showToast("Atualizando status do WhatsApp...", "info");
+
+    // Aguardar um pouco antes de recarregar
+    setTimeout(() => {
+      loadInstanceStatus();
+    }, 1000);
+  } catch (e) {
+    console.error("Erro ao atualizar status:", e);
+    showToast("Erro ao atualizar status: " + e.message, "error");
+
+    // Mostrar erro
+    const currentState = document.querySelector(
+      "#instanceStatus > div[style*='block']"
+    );
+    if (currentState) {
+      currentState.innerHTML = `
+        <div class="text-center py-5">
+          <i class="fas fa-exclamation-triangle text-danger fa-3x mb-3"></i>
+          <h5>Erro ao Atualizar Status</h5>
+          <p class="text-danger mb-4">${e.message}</p>
+          <button class="btn btn-primary" onclick="retryConnection()">
+            <i class="fas fa-sync-alt me-1"></i>
+            Tentar Novamente
+          </button>
+        </div>
+      `;
+    }
+  }
+}
+
+// Função para copiar texto para a área de transferência

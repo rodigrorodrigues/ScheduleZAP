@@ -1,12 +1,13 @@
-# ScheduleZAP - Agendador de Mensagens WhatsApp
+# ScheduleZAP v2 - Agendador de Mensagens WhatsApp
 
-Um aplicativo web simples para agendar mensagens do WhatsApp usando a Evolution API.
+Um aplicativo web para agendar mensagens do WhatsApp usando a Evolution API, com suporte a múltiplas instâncias por usuário.
 
 ## 🚀 Funcionalidades
 
+- **Múltiplas Instâncias**: Cada usuário pode gerenciar suas próprias instâncias da Evolution API
 - **Agendar Mensagens**: Agende mensagens para qualquer data e hora
 - **Mensagens Agendadas**: Visualize e gerencie todas as mensagens agendadas
-- **Configuração**: Configure a URL da Evolution API, token e nome da instância
+- **Gerenciamento de Instâncias**: Crie, edite, exclua e ative instâncias
 - **Interface Moderna**: Interface responsiva e intuitiva
 - **Status em Tempo Real**: Acompanhe o status de envio das mensagens
 - **Autenticação Segura**: Login com usuário e senha
@@ -46,12 +47,16 @@ Abra seu navegador e acesse: `http://localhost:8988`
 
 ## ⚙️ Configuração
 
-1. Acesse a seção "Configuração" no menu lateral
-2. Preencha os campos:
+1. Faça login com o usuário padrão (admin / Lucas4tlof!)
+2. Acesse a seção "Instâncias" no menu lateral
+3. Clique em "Nova Instância"
+4. Preencha os campos:
+   - **Nome**: Nome para identificar a instância
    - **URL da Evolution API**: URL onde sua Evolution API está rodando (ex: http://localhost:8080)
    - **API Key**: API Key obtida da Evolution API
    - **Nome da Instância**: Nome da instância configurada na Evolution API
-3. Clique em "Salvar Configuração"
+5. Clique em "Salvar Instância"
+6. Ative a instância clicando no botão "Ativar"
 
 ## 📱 Como Usar
 
@@ -70,18 +75,32 @@ Abra seu navegador e acesse: `http://localhost:8988`
 2. Visualize todas as mensagens agendadas com seus respectivos status
 3. Use o botão de lixeira para remover mensagens
 
+### Gerenciar Instâncias
+
+1. Vá para a seção "Instâncias"
+2. Visualize todas as suas instâncias
+3. Use os botões para:
+   - Criar nova instância
+   - Editar instância existente
+   - Excluir instância
+   - Ativar/desativar instância
+
 ## 🔧 Estrutura do Projeto
 
 ```
 ScheduleZAP/
 ├── server.js              # Servidor Express
-├── package.json           # Dependências Node.js
-├── Dockerfile            # Configuração Docker
-├── docker-compose.yml    # Orquestração Docker
-├── public/               # Frontend
-│   ├── index.html        # Página principal
-│   └── app.js           # JavaScript do frontend
-└── README.md            # Este arquivo
+├── database.js           # Funções do banco de dados
+├── package.json          # Dependências Node.js
+├── Dockerfile           # Configuração Docker
+├── docker-compose.yml   # Orquestração Docker
+├── public/              # Frontend
+│   ├── index.html       # Página principal
+│   ├── login.html      # Página de login
+│   ├── app.js          # JavaScript do frontend
+│   ├── manifest.json   # Configuração PWA
+│   └── sw.js          # Service Worker
+└── README.md           # Este arquivo
 ```
 
 ## 🌐 API Endpoints
@@ -92,16 +111,38 @@ ScheduleZAP/
 - `POST /api/messages` - Agendar nova mensagem
 - `DELETE /api/messages/:id` - Remover mensagem
 
-### Configuração
+### Instâncias
 
-- `GET /api/config` - Obter configurações
-- `POST /api/config` - Salvar configurações
+- `GET /api/instances` - Listar instâncias do usuário
+- `GET /api/instances/:id` - Obter detalhes da instância
+- `POST /api/instances` - Criar nova instância
+- `PUT /api/instances/:id` - Atualizar instância
+- `DELETE /api/instances/:id` - Remover instância
+- `POST /api/instances/:id/activate` - Ativar instância
+- `GET /api/instances/active` - Obter instância ativa
+
+### Autenticação
+
+- `POST /api/login` - Login
+- `POST /api/logout` - Logout
+- `GET /api/auth/status` - Verificar status da autenticação
+
+### Usuários (Admin)
+
+- `GET /api/admin/users` - Listar usuários
+- `POST /api/admin/users` - Criar usuário
+- `PUT /api/admin/users/:id` - Editar usuário
+- `DELETE /api/admin/users/:id` - Remover usuário
+- `PUT /api/admin/users/:id/password` - Redefinir senha
 
 ## 🔒 Segurança
 
-- As configurações são salvas localmente no arquivo `config.json`
-- O token da Evolution API é armazenado de forma segura
+- Cada usuário tem suas próprias instâncias
+- Tokens e senhas são armazenados de forma segura
 - Validação de entrada em todos os formulários
+- Autenticação e autorização em todas as rotas
+- Senhas são geradas aleatoriamente para novos usuários
+- Forçar alteração de senha no primeiro login
 
 ## 🐛 Solução de Problemas
 
@@ -113,7 +154,7 @@ ScheduleZAP/
 - **Solução**:
   1. Verifique se a API Key da Evolution API está correta
   2. Confirme se a API Key tem permissões para enviar mensagens
-  3. Use o botão "Testar Conexão" na seção Configuração
+  3. Use o botão "Testar Conexão" ao criar/editar a instância
 
 #### Erro 404 (Não Encontrado)
 
@@ -132,15 +173,18 @@ ScheduleZAP/
   3. Verifique se a porta está acessível
   4. Teste a conectividade: `curl http://sua-evolution-api:porta`
 
-### Verificação de Configuração
+### Verificação de Instância
 
-1. **Acesse a seção Configuração**
-2. **Preencha os campos**:
+1. **Acesse a seção Instâncias**
+2. **Clique em "Nova Instância"**
+3. **Preencha os campos**:
+   - Nome da instância
    - URL da Evolution API (ex: http://localhost:8080)
    - API Key (obtida da Evolution API)
    - Nome da instância (ex: default)
-3. **Clique em "Salvar Configuração"**
 4. **Clique em "Testar Conexão"** para verificar se está funcionando
+5. **Clique em "Salvar Instância"**
+6. **Ative a instância** clicando no botão "Ativar"
 
 ### Logs Detalhados
 
@@ -160,14 +204,6 @@ Os logs mostrarão:
 - URLs sendo chamadas
 - Erros detalhados da Evolution API
 - Status de conectividade
-
-## 📝 Logs
-
-Para visualizar os logs da aplicação:
-
-```bash
-docker-compose logs -f schedulezap
-```
 
 ## 🔄 Atualizações
 

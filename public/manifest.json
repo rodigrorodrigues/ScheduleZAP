@@ -1,6 +1,6 @@
 {
-  "name": "ScheduleZAP - Agendador de Mensagens WhatsApp",
-  "short_name": "ScheduleZAP",
+  "name": "ScheduleZAP v2 - Agendador de Mensagens WhatsApp",
+  "short_name": "ScheduleZAP v2",
   "description": "Aplicativo para agendar mensagens do WhatsApp via Evolution API",
   "start_url": "/",
   "display": "standalone",
