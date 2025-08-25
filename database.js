@@ -181,12 +181,24 @@ async function createDefaultUser() {
 // Funções para gerenciar configuração global
 function getGlobalConfig() {
   return new Promise((resolve, reject) => {
+    console.log("Buscando configuração global no banco...");
     db.get(
       "SELECT * FROM global_config ORDER BY id DESC LIMIT 1",
       (err, row) => {
         if (err) {
+          console.error("Erro ao buscar configuração global:", err);
           reject(err);
         } else {
+          console.log(
+            "Configuração global encontrada:",
+            row
+              ? {
+                  id: row.id,
+                  url: row.evolution_api_url,
+                  hasToken: !!row.evolution_api_token,
+                }
+              : "Nenhuma configuração"
+          );
           resolve(row);
         }
       }
@@ -196,13 +208,23 @@ function getGlobalConfig() {
 
 function saveGlobalConfig(config) {
   return new Promise((resolve, reject) => {
+    console.log("Salvando configuração global no banco:", {
+      url: config.evolution_api_url,
+      hasToken: !!config.evolution_api_token,
+    });
+
     db.run(
       "INSERT INTO global_config (evolution_api_url, evolution_api_token) VALUES (?, ?)",
       [config.evolution_api_url, config.evolution_api_token],
       function (err) {
         if (err) {
+          console.error("Erro ao salvar configuração global:", err);
           reject(err);
         } else {
+          console.log(
+            "Configuração global salva com sucesso, ID:",
+            this.lastID
+          );
           resolve();
         }
       }

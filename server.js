@@ -296,7 +296,17 @@ app.post("/api/admin/config/test", requireAdmin, async (req, res) => {
 // Admin - Configuração global da Evolution API
 app.get("/api/admin/config", requireAdmin, async (req, res) => {
   try {
+    console.log("Buscando configuração global...");
     const config = await db.getGlobalConfig();
+    console.log(
+      "Configuração encontrada:",
+      config
+        ? {
+            url: config.evolution_api_url,
+            hasToken: !!config.evolution_api_token,
+          }
+        : "Nenhuma configuração"
+    );
     res.json(config || {});
   } catch (error) {
     console.error("Erro ao obter configuração global:", error);
@@ -374,11 +384,7 @@ app.post("/api/admin/config", requireAdmin, async (req, res) => {
             .json({ error: "Falha ao listar instâncias na Evolution API" });
         }
 
-        return res.json({
-          success: true,
-          message: "Conexão estabelecida com sucesso",
-          instances: response.data,
-        });
+        console.log("Teste de conexão bem-sucedido - salvando configuração");
       } catch (instancesError) {
         console.error(
           "Erro ao listar instâncias:",
@@ -398,8 +404,15 @@ app.post("/api/admin/config", requireAdmin, async (req, res) => {
       });
     }
 
+    // Salvar configuração no banco de dados
+    console.log("Salvando configuração no banco:", {
+      evolution_api_url,
+      evolution_api_token: "***",
+    });
     await db.saveGlobalConfig({ evolution_api_url, evolution_api_token });
-    res.json({ success: true });
+    console.log("Configuração salva com sucesso");
+
+    res.json({ success: true, message: "Configuração salva com sucesso" });
   } catch (error) {
     console.error("Erro ao salvar configuração global:", error);
     res.status(500).json({ error: "Erro interno do servidor" });

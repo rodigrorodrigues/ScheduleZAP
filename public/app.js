@@ -1265,7 +1265,12 @@ async function loadGlobalConfig() {
     document.getElementById("evolutionApiUrl").placeholder = "Carregando...";
     document.getElementById("evolutionApiToken").placeholder = "Carregando...";
 
-    const res = await fetch("/api/admin/config");
+    const res = await fetch("/api/admin/config", {
+      headers: {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        Pragma: "no-cache",
+      },
+    });
     if (!res.ok) throw new Error("Falha ao carregar configuração");
     const config = await res.json();
 
@@ -1277,6 +1282,11 @@ async function loadGlobalConfig() {
     document.getElementById("evolutionApiToken").placeholder = "Sua API Key";
 
     if (config) {
+      console.log("Configuração carregada:", {
+        url: config.evolution_api_url,
+        hasToken: !!config.evolution_api_token,
+      });
+
       document.getElementById("evolutionApiUrl").value =
         config.evolution_api_url || "";
       document.getElementById("evolutionApiToken").value =
@@ -1286,6 +1296,8 @@ async function loadGlobalConfig() {
       if (config.evolution_api_url && config.evolution_api_token) {
         testGlobalConfig();
       }
+    } else {
+      console.log("Nenhuma configuração encontrada");
     }
   } catch (e) {
     console.error("Erro ao carregar configuração global:", e);
@@ -1426,6 +1438,9 @@ async function saveGlobalConfig() {
     tokenInput.disabled = false;
     saveButton.innerHTML =
       '<i class="fas fa-save me-1"></i> Salvar Configuração';
+
+    // Recarregar configuração para garantir que foi salva
+    await loadGlobalConfig();
 
     // Testar conexão automaticamente
     testGlobalConfig();
