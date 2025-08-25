@@ -3,6 +3,9 @@ let currentSection = "schedule";
 let toast;
 // Cache de grupos: id -> nome
 let groupsMap = {};
+// Contador para timeout de conexão
+let connectionAttempts = 0;
+const MAX_CONNECTION_ATTEMPTS = 12; // 1 minuto (12 * 5 segundos)
 
 // Registrar Service Worker para PWA
 if ("serviceWorker" in navigator) {
@@ -1504,7 +1507,8 @@ async function loadInstanceStatus() {
     document.getElementById("error").style.display = "none";
 
     if (!instance?.instance_name) {
-      // Sem instância
+      // Sem instância - resetar contador
+      connectionAttempts = 0;
       document.getElementById("noInstance").style.display = "block";
       document.getElementById("noInstance").innerHTML = `
         <div class="text-center py-5">
@@ -1522,10 +1526,12 @@ async function loadInstanceStatus() {
         </div>
       `;
     } else if (instance.instance_status === "qr_ready") {
-      // QR Code disponível
+      // QR Code disponível - resetar contador
+      connectionAttempts = 0;
       createInstance();
     } else if (instance.instance_connected) {
-      // Conectado
+      // Conectado - resetar contador
+      connectionAttempts = 0;
       document.getElementById("connected").style.display = "block";
       document.getElementById("connected").innerHTML = `
         <div class="text-center py-5">
@@ -1553,6 +1559,43 @@ async function loadInstanceStatus() {
         </div>
       `;
     } else if (instance.instance_status === "connecting") {
+      // Incrementar contador de tentativas
+      connectionAttempts++;
+
+      if (connectionAttempts >= MAX_CONNECTION_ATTEMPTS) {
+        // Timeout - mostrar erro de conexão
+        connectionAttempts = 0; // Resetar contador
+        document.getElementById("connecting").style.display = "none";
+        document.getElementById("error").style.display = "block";
+        document.getElementById("error").innerHTML = `
+          <div class="text-center py-5">
+            <i class="fas fa-clock text-warning fa-3x mb-3"></i>
+            <h5>Tempo de Conexão Expirado</h5>
+            <p class="text-muted mb-4">
+              O tempo para conectar expirou. Isso pode acontecer se:
+              <br>
+              • O QR Code foi fechado antes de ser escaneado
+              <br>
+              • Houve algum problema na conexão
+              <br>
+              • A instância não foi criada corretamente
+            </p>
+            <div class="d-flex justify-content-center gap-2">
+              <button class="btn btn-primary" onclick="createInstance()">
+                <i class="fas fa-qrcode me-1"></i>
+                Tentar Novamente
+              </button>
+              <button class="btn btn-outline-secondary" onclick="clearInstanceData()">
+                <i class="fas fa-trash me-1"></i>
+                Limpar Dados
+              </button>
+            </div>
+          </div>
+        `;
+        showToast("Tempo de conexão expirado. Tente novamente.", "warning");
+        return;
+      }
+
       // Conectando
       document.getElementById("connecting").style.display = "block";
       document.getElementById("connecting").innerHTML = `
@@ -1563,9 +1606,13 @@ async function loadInstanceStatus() {
             Aguarde enquanto configuramos sua instância.
             <br>
             Isso pode levar alguns segundos.
+            <br>
+            <small class="text-muted">Tentativa ${connectionAttempts} de ${MAX_CONNECTION_ATTEMPTS}</small>
           </p>
           <div class="progress mb-3" style="height: 10px;">
-            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: ${
+              (connectionAttempts / MAX_CONNECTION_ATTEMPTS) * 100
+            }%"></div>
           </div>
         </div>
       `;
@@ -1575,7 +1622,8 @@ async function loadInstanceStatus() {
       instance.instance_status === "close" ||
       instance.instance_status === "CLOSE"
     ) {
-      // Instância fechada/desconectada
+      // Instância fechada/desconectada - resetar contador
+      connectionAttempts = 0;
       document.getElementById("error").style.display = "block";
       document.getElementById("error").innerHTML = `
         <div class="text-center py-5">
@@ -1599,7 +1647,8 @@ async function loadInstanceStatus() {
         </div>
       `;
     } else {
-      // Erro
+      // Erro - resetar contador
+      connectionAttempts = 0;
       document.getElementById("error").style.display = "block";
       document.getElementById("error").innerHTML = `
         <div class="text-center py-5">
