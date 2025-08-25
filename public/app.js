@@ -501,7 +501,7 @@ async function handleScheduleSubmit(event) {
 // Função para testar conexão com Evolution API
 async function testConnection() {
   try {
-    showToast("Testando conexão com Evolution API v2...", "warning");
+    // Toast de teste removido - não é necessário para o usuário
 
     const response = await fetch("/api/evolution/test", {
       method: "GET",
@@ -515,10 +515,6 @@ async function testConnection() {
     const result = await response.json();
 
     if (result.success) {
-      showToast(
-        `${result.message} - ${result.instance.foundChats} chats encontrados`,
-        "success"
-      );
       console.log("Teste de conexão bem-sucedido:", result);
     } else {
       showToast(`Erro: ${result.error}`, "error");
@@ -1327,7 +1323,7 @@ async function testGlobalConfig() {
     testButton.innerHTML =
       '<i class="fas fa-spinner fa-spin me-1"></i> Testando...';
 
-    showToast("Testando conexão com a Evolution API...", "info");
+    // Toast de teste removido - não é necessário para o usuário
 
     const res = await fetch("/api/admin/config/test", {
       method: "POST",
@@ -1345,10 +1341,7 @@ async function testGlobalConfig() {
 
     const result = await res.json();
     if (result.success) {
-      showToast(
-        `Conexão testada com sucesso! ${result.message || ""}`,
-        "success"
-      );
+      // Toast de sucesso removido - não é necessário para o usuário
     } else {
       throw new Error(result.error || "Falha ao testar conexão");
     }
@@ -1578,6 +1571,33 @@ async function loadInstanceStatus() {
       `;
       // Verificar status a cada 5 segundos
       setTimeout(loadInstanceStatus, 5000);
+    } else if (
+      instance.instance_status === "close" ||
+      instance.instance_status === "CLOSE"
+    ) {
+      // Instância fechada/desconectada
+      document.getElementById("error").style.display = "block";
+      document.getElementById("error").innerHTML = `
+        <div class="text-center py-5">
+          <i class="fas fa-power-off text-warning fa-3x mb-3"></i>
+          <h5>WhatsApp Desconectado</h5>
+          <p class="text-muted mb-4">
+            Sua instância do WhatsApp foi desconectada.
+            <br>
+            Para continuar usando o sistema, você precisa criar uma nova conexão.
+          </p>
+          <div class="d-flex justify-content-center gap-2">
+            <button class="btn btn-primary" onclick="createInstance()">
+              <i class="fas fa-qrcode me-1"></i>
+              Conectar Novamente
+            </button>
+            <button class="btn btn-outline-secondary" onclick="clearInstanceData()">
+              <i class="fas fa-trash me-1"></i>
+              Limpar Dados
+            </button>
+          </div>
+        </div>
+      `;
     } else {
       // Erro
       document.getElementById("error").style.display = "block";
@@ -1588,10 +1608,16 @@ async function loadInstanceStatus() {
           <p class="text-danger mb-4">
             Status: ${instance.instance_status || "Desconhecido"}
           </p>
-          <button class="btn btn-primary" onclick="retryConnection()">
-            <i class="fas fa-sync-alt me-1"></i>
-            Tentar Novamente
-          </button>
+          <div class="d-flex justify-content-center gap-2">
+            <button class="btn btn-primary" onclick="retryConnection()">
+              <i class="fas fa-sync-alt me-1"></i>
+              Tentar Novamente
+            </button>
+            <button class="btn btn-outline-secondary" onclick="clearInstanceData()">
+              <i class="fas fa-trash me-1"></i>
+              Limpar Dados
+            </button>
+          </div>
         </div>
       `;
     }
@@ -1817,6 +1843,72 @@ async function retryQrCode() {
 async function retryConnection() {
   document.getElementById("error").style.display = "none";
   createInstance();
+}
+
+async function clearInstanceData() {
+  if (
+    !confirm(
+      "Tem certeza que deseja limpar os dados da instância?\n\nIsso irá remover completamente a instância atual e permitir que você crie uma nova conexão."
+    )
+  ) {
+    return;
+  }
+
+  try {
+    // Mostrar loading
+    document.getElementById("error").innerHTML = `
+      <div class="text-center py-5">
+        <i class="fas fa-spinner fa-spin fa-3x mb-3"></i>
+        <h5>Limpando Dados...</h5>
+        <p class="text-muted">
+          Aguarde enquanto limpamos os dados da instância.
+          <br>
+          Isso pode levar alguns segundos.
+        </p>
+        <div class="progress mb-3" style="height: 10px;">
+          <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 100%"></div>
+        </div>
+      </div>
+    `;
+
+    showToast("Limpando dados da instância...", "info");
+
+    // Chamar a rota DELETE para limpar a instância
+    const res = await fetch("/api/instance", { method: "DELETE" });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.error || "Falha ao limpar dados da instância");
+    }
+
+    showToast("Dados da instância limpos com sucesso!", "success");
+
+    // Aguardar um pouco antes de recarregar
+    setTimeout(() => {
+      loadInstanceStatus();
+    }, 1000);
+  } catch (e) {
+    console.error("Erro ao limpar dados da instância:", e);
+    showToast("Erro ao limpar dados: " + e.message, "error");
+
+    // Mostrar erro
+    document.getElementById("error").innerHTML = `
+      <div class="text-center py-5">
+        <i class="fas fa-exclamation-triangle text-danger fa-3x mb-3"></i>
+        <h5>Erro ao Limpar Dados</h5>
+        <p class="text-danger mb-4">${e.message}</p>
+        <div class="d-flex justify-content-center gap-2">
+          <button class="btn btn-primary" onclick="clearInstanceData()">
+            <i class="fas fa-sync-alt me-1"></i>
+            Tentar Novamente
+          </button>
+          <button class="btn btn-outline-secondary" onclick="createInstance()">
+            <i class="fas fa-qrcode me-1"></i>
+            Criar Nova Instância
+          </button>
+        </div>
+      </div>
+    `;
+  }
 }
 
 async function disconnectInstance() {

@@ -462,7 +462,16 @@ app.get("/api/instance", requireAuth, async (req, res) => {
           status === "open" ||
           status === "connected";
 
+        // Verificar se o status é "close" ou "CLOSE" e tratar como desconectado
+        if (status === "close" || status === "CLOSE") {
+          console.log("Status detectado como CLOSE - instância desconectada");
+        }
+
         console.log("Status extraído:", status, "Conectado:", connected);
+        console.log(
+          "Resposta completa da Evolution API:",
+          JSON.stringify(response.data, null, 2)
+        );
 
         // Atualizar status no banco
         await db.updateUserInstance(req.session.user.id, {
@@ -673,6 +682,65 @@ app.get("/api/instance/status", requireAuth, async (req, res) => {
     }
   } catch (error) {
     console.error("Erro ao obter status:", error);
+    res.status(500).json({ error: "Erro interno do servidor" });
+  }
+});
+
+// DELETE - Desconectar instância do usuário
+app.delete("/api/instance", requireAuth, async (req, res) => {
+  try {
+    // Obter instância do usuário
+    const instance = await db.getUserInstanceData(req.session.user.id);
+    if (!instance?.instance_name) {
+      return res.status(400).json({ error: "Instância não encontrada" });
+    }
+
+    // Obter configuração global
+    const config = await db.getGlobalConfig();
+    if (!config) {
+      return res
+        .status(400)
+        .json({ error: "Configuração global não encontrada" });
+    }
+
+    // Deletar instância na Evolution API
+    try {
+      const baseUrl = config.evolution_api_url.replace(/\/+$/, "");
+      const encodedInstance = encodeURIComponent(instance.instance_name);
+
+      console.log(
+        "Deletando instância na Evolution API:",
+        instance.instance_name
+      );
+
+      const response = await axios.delete(
+        `${baseUrl}/instance/delete/${encodedInstance}`,
+        {
+          headers: {
+            apikey: config.evolution_api_token,
+            "Content-Type": "application/json",
+          },
+          timeout: 10000,
+        }
+      );
+
+      console.log("Instância deletada na Evolution API:", response.status);
+    } catch (error) {
+      console.error("Erro ao deletar instância na Evolution API:", error);
+      // Continuar mesmo se falhar na Evolution API
+    }
+
+    // Limpar dados da instância no banco
+    await db.updateUserInstance(req.session.user.id, {
+      instance_name: null,
+      instance_connected: false,
+      instance_qr_code: null,
+      instance_status: "not_created",
+    });
+
+    res.json({ success: true, message: "Instância desconectada com sucesso" });
+  } catch (error) {
+    console.error("Erro ao desconectar instância:", error);
     res.status(500).json({ error: "Erro interno do servidor" });
   }
 });
@@ -1149,7 +1217,7 @@ app.get("/api/chats", requireAuth, async (req, res) => {
         headers: {
           apikey: config.evolution_api_token,
         },
-        timeout: 30000, // Reduzido para 30 segundos
+        // Removido timeout para permitir que a requisição demore o tempo necessário
       }
     );
 
@@ -1200,8 +1268,6 @@ app.get("/api/chats", requireAuth, async (req, res) => {
       errorMessage = "API Key inválida ou não autorizada";
     } else if (error.response?.status === 404) {
       errorMessage = "Instância não encontrada. Verifique o nome da instância.";
-    } else if (error.code === "ECONNABORTED") {
-      errorMessage = "Timeout na conexão com a Evolution API. Tente novamente.";
     } else if (error.code === "ECONNREFUSED") {
       errorMessage =
         "Não foi possível conectar à Evolution API. Verifique a URL.";
@@ -1209,9 +1275,6 @@ app.get("/api/chats", requireAuth, async (req, res) => {
       errorMessage = "URL da Evolution API não encontrada. Verifique a URL.";
     } else if (error.response?.data?.error) {
       errorMessage = error.response.data.error;
-    } else if (error.message.includes("timeout")) {
-      errorMessage =
-        "Timeout na conexão com a Evolution API. A API pode estar sobrecarregada.";
     }
 
     res.status(400).json({
