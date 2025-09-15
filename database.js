@@ -213,22 +213,32 @@ function saveGlobalConfig(config) {
       hasToken: !!config.evolution_api_token,
     });
 
-    db.run(
-      "INSERT INTO global_config (evolution_api_url, evolution_api_token) VALUES (?, ?)",
-      [config.evolution_api_url, config.evolution_api_token],
-      function (err) {
-        if (err) {
-          console.error("Erro ao salvar configuração global:", err);
-          reject(err);
-        } else {
-          console.log(
-            "Configuração global salva com sucesso, ID:",
-            this.lastID
-          );
-          resolve();
-        }
+    // Primeiro, limpar configurações antigas
+    db.run("DELETE FROM global_config", [], (err) => {
+      if (err) {
+        console.error("Erro ao limpar configurações antigas:", err);
+        reject(err);
+        return;
       }
-    );
+
+      // Inserir nova configuração
+      db.run(
+        "INSERT INTO global_config (evolution_api_url, evolution_api_token) VALUES (?, ?)",
+        [config.evolution_api_url, config.evolution_api_token],
+        function (err) {
+          if (err) {
+            console.error("Erro ao salvar configuração global:", err);
+            reject(err);
+          } else {
+            console.log(
+              "Configuração global salva com sucesso, ID:",
+              this.lastID
+            );
+            resolve();
+          }
+        }
+      );
+    });
   });
 }
 
