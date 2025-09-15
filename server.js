@@ -8,6 +8,8 @@ const { v4: uuidv4 } = require("uuid");
 const session = require("express-session");
 const db = require("./database");
 const bcrypt = require("bcryptjs"); // Adicionado para criptografia de senha
+const https = require("https");
+const fs = require("fs");
 
 const app = express();
 const PORT = process.env.PORT || 8988;
@@ -27,20 +29,35 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
+// Verificar se é HTTPS em produção
+const isProduction = process.env.NODE_ENV === "production";
+const useHTTPS = process.env.USE_HTTPS === "true" || isProduction;
+
 // Configuração de sessão
 app.use(
   session({
-    secret: "schedulezap-secret-key",
+    secret: process.env.SESSION_SECRET || "schedulezap-secret-key",
     resave: true,
     saveUninitialized: true,
     cookie: {
-      secure: false,
+      secure: useHTTPS, // Usar secure cookies apenas em HTTPS
       maxAge: 24 * 60 * 60 * 1000, // 24 horas
       httpOnly: true,
       sameSite: "lax",
     },
   })
 );
+
+// Middleware para redirecionar HTTP para HTTPS em produção
+if (isProduction) {
+  app.use((req, res, next) => {
+    if (req.header("x-forwarded-proto") !== "https") {
+      res.redirect(`https://${req.header("host")}${req.url}`);
+    } else {
+      next();
+    }
+  });
+}
 
 // Cache em memória para lista de grupos da Evolution API
 const GROUPS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutos
@@ -1384,15 +1401,55 @@ async function startServer() {
     await db.initDatabase();
     console.log("Banco de dados inicializado com sucesso");
 
-    // Iniciar servidor
-    app.listen(PORT, () => {
-      console.log(`Servidor rodando na porta ${PORT}`);
-      console.log(`Acesse: http://localhost:${PORT}`);
-      console.log("Usuário padrão: admin / Lucas4tlof!");
-    });
+    // Configuração HTTPS opcional
+    if (useHTTPS) {
+      try {
+        // Tentar carregar certificados SSL
+        const privateKey = fs.readFileSync(
+          process.env.SSL_PRIVATE_KEY || "./ssl/private.key",
+          "utf8"
+        );
+        const certificate = fs.readFileSync(
+          process.env.SSL_CERTIFICATE || "./ssl/certificate.crt",
+          "utf8"
+        );
+        const credentials = { key: privateKey, cert: certificate };
+
+        const httpsServer = https.createServer(credentials, app);
+        httpsServer.listen(PORT, () => {
+          console.log(`🔒 Servidor HTTPS rodando na porta ${PORT}`);
+          console.log(`🔒 Acesse: https://localhost:${PORT}`);
+          console.log("👤 Usuário padrão: admin / Lucas4tlof!");
+          console.log("🚀 PWA habilitado com HTTPS!");
+        });
+
+        // Também iniciar servidor HTTP na porta 8080 para redirecionar
+        const httpApp = express();
+        httpApp.use((req, res) => {
+          res.redirect(`https://${req.headers.host}${req.url}`);
+        });
+        httpApp.listen(8080, () => {
+          console.log("📄 HTTP (porta 8080) redirecionando para HTTPS");
+        });
+      } catch (error) {
+        console.warn("⚠️  Certificados SSL não encontrados, usando HTTP");
+        startHttpServer();
+      }
+    } else {
+      startHttpServer();
+    }
   } catch (error) {
     console.error("Erro ao inicializar servidor:", error);
     process.exit(1);
+  }
+
+  function startHttpServer() {
+    app.listen(PORT, () => {
+      console.log(`📄 Servidor HTTP rodando na porta ${PORT}`);
+      console.log(`🌐 Acesse: http://localhost:${PORT}`);
+      console.log("👤 Usuário padrão: admin / Lucas4tlof!");
+      console.log("⚠️  Para PWA completo, configure HTTPS em produção");
+    });
   }
 }
 
