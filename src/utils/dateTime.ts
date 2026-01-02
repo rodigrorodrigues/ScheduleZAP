@@ -63,11 +63,10 @@ export function validateScheduledDateTime(
   const scheduledAt = createDateInSP(scheduledDate, scheduledTime);
   const now = new Date();
   const nowSP = convertToSP(now);
-  const scheduledSP = convertToSP(scheduledAt);
 
-  const isToday = scheduledSP.toDateString() === nowSP.toDateString();
+  const isToday = scheduledAt.toDateString() === nowSP.toDateString();
   
-  if (isToday && scheduledSP.getTime() <= nowSP.getTime()) {
+  if (isToday && scheduledAt.getTime() <= nowSP.getTime()) {
     return {
       isValid: false,
       error: "Para hoje, o horário deve ser no futuro (São Paulo)",

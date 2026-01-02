@@ -65,7 +65,13 @@ export default function ScheduleMessage() {
   const getMinDate = () => "";
   const getMinTime = () => {
     if (watchedDate === getCurrentDateSP()) {
-      return getCurrentTimeSP();
+      const currentTime = getCurrentTimeSP();
+      // Add 1 minute to ensure the scheduled time is in the future
+      const [hours, minutes] = currentTime.split(":").map(Number);
+      const futureMinutes = minutes + 1;
+      const futureHours = hours + Math.floor(futureMinutes / 60);
+      const adjustedMinutes = futureMinutes % 60;
+      return `${futureHours.toString().padStart(2, "0")}:${adjustedMinutes.toString().padStart(2, "0")}`;
     }
     return "";
   };

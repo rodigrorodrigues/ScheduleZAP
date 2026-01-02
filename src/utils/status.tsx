@@ -1,5 +1,6 @@
 import { CheckCircle, Clock, XCircle, AlertCircle, WifiOff } from "lucide-react";
 
+// Use the same type as defined in api.ts for consistency
 export type MessageStatus = "sent" | "pending" | "cancelled" | "failed";
 export type ConnectionStatus = "connected" | "disconnected" | "testing" | null;
 
