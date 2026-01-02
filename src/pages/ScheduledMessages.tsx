@@ -2,8 +2,14 @@ import { useEffect, useState } from "react";
 import { scheduledAPI, ScheduledMessage } from "../services/api";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { Trash2, AlertCircle, CheckCircle, Clock, XCircle } from "lucide-react";
+import { Trash2, AlertCircle, Clock } from "lucide-react";
 import toast from "react-hot-toast";
+import { Spinner } from "../components/Spinner";
+import {
+  getMessageStatusIcon,
+  getMessageStatusText,
+  getMessageStatusColor,
+} from "../utils/status";
 
 export default function ScheduledMessages() {
   const [messages, setMessages] = useState<ScheduledMessage[]>([]);
@@ -44,36 +50,6 @@ export default function ScheduledMessages() {
     }
   };
 
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case "sent":
-        return <CheckCircle className="h-5 w-5 text-green-500" />;
-      case "pending":
-        return <Clock className="h-5 w-5 text-yellow-500" />;
-      case "cancelled":
-        return <XCircle className="h-5 w-5 text-red-500" />;
-      case "failed":
-        return <AlertCircle className="h-5 w-5 text-red-500" />;
-      default:
-        return null;
-    }
-  };
-
-  const getStatusText = (status: string) => {
-    switch (status) {
-      case "sent":
-        return "Enviada";
-      case "pending":
-        return "Aguardando";
-      case "cancelled":
-        return "Cancelada";
-      case "failed":
-        return "Falha";
-      default:
-        return status;
-    }
-  };
-
   const formatDate = (date: string) => {
     return format(new Date(date), "dd/MM/yyyy HH:mm", { locale: ptBR });
   };
@@ -81,7 +57,7 @@ export default function ScheduledMessages() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+        <Spinner size="lg" color="gray" />
       </div>
     );
   }
@@ -121,17 +97,11 @@ export default function ScheduledMessages() {
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                {getStatusIcon(message.status)}
+                {getMessageStatusIcon(message.status)}
                 <span
-                  className={`font-medium ${
-                    message.status === "sent"
-                      ? "text-green-600"
-                      : message.status === "pending"
-                      ? "text-yellow-600"
-                      : "text-red-600"
-                  }`}
+                  className={`font-medium ${getMessageStatusColor(message.status)}`}
                 >
-                  {getStatusText(message.status)}
+                  {getMessageStatusText(message.status)}
                 </span>
               </div>
               {message.status === "pending" && (

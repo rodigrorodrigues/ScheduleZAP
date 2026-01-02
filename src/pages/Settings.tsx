@@ -3,15 +3,11 @@ import { useForm } from "react-hook-form";
 import {
   Settings as SettingsIcon,
   Wifi,
-  WifiOff,
-  CheckCircle,
-  AlertCircle,
   Key,
   Plus,
   List,
   TestTube,
   Bug,
-  Send,
   Trash2,
 } from "lucide-react";
 import {
@@ -24,6 +20,13 @@ import {
 } from "../services/api";
 import toast from "react-hot-toast";
 import axios from "axios";
+import { Spinner } from "../components/Spinner";
+import {
+  getConnectionStatusIcon,
+  getConnectionStatusText,
+  getConnectionStatusColor,
+  getInstanceStatusColor,
+} from "../utils/status";
 
 // Type guard para verificar se é um erro
 function isEvolutionError(
@@ -410,60 +413,6 @@ export default function Settings() {
     toast.success(`Instância "${instanceName}" selecionada!`);
   };
 
-  const getStatusIcon = () => {
-    switch (connectionStatus) {
-      case "connected":
-        return <CheckCircle className="h-5 w-5 text-green-600" />;
-      case "disconnected":
-        return <WifiOff className="h-5 w-5 text-red-600" />;
-      case "testing":
-        return (
-          <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600" />
-        );
-      default:
-        return <AlertCircle className="h-5 w-5 text-gray-400" />;
-    }
-  };
-
-  const getStatusText = () => {
-    switch (connectionStatus) {
-      case "connected":
-        return "Conectado";
-      case "disconnected":
-        return "Desconectado";
-      case "testing":
-        return "Testando...";
-      default:
-        return "Não configurado";
-    }
-  };
-
-  const getStatusColor = () => {
-    switch (connectionStatus) {
-      case "connected":
-        return "text-green-600";
-      case "disconnected":
-        return "text-red-600";
-      case "testing":
-        return "text-blue-600";
-      default:
-        return "text-gray-400";
-    }
-  };
-
-  const getInstanceStatusColor = (status: string) => {
-    switch (status) {
-      case "open":
-        return "text-green-600";
-      case "connecting":
-        return "text-yellow-600";
-      case "close":
-        return "text-red-600";
-      default:
-        return "text-gray-600";
-    }
-  };
-
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       {/* Header */}
@@ -481,9 +430,9 @@ export default function Settings() {
             </h3>
           </div>
           <div className="flex items-center space-x-2">
-            {getStatusIcon()}
-            <span className={`text-sm font-medium ${getStatusColor()}`}>
-              {getStatusText()}
+            {getConnectionStatusIcon(connectionStatus)}
+            <span className={`text-sm font-medium ${getConnectionStatusColor(connectionStatus)}`}>
+              {getConnectionStatusText(connectionStatus)}
             </span>
           </div>
         </div>
@@ -528,7 +477,7 @@ export default function Settings() {
                   className="btn-secondary px-4"
                 >
                   {isTestingAPI ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                    <Spinner size="sm" color="secondary" />
                   ) : (
                     <TestTube className="h-4 w-4" />
                   )}
@@ -567,7 +516,7 @@ export default function Settings() {
                   className="btn-secondary px-4"
                 >
                   {isLoadingInstances ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                    <Spinner size="sm" color="secondary" />
                   ) : (
                     <List className="h-4 w-4" />
                   )}
@@ -612,7 +561,7 @@ export default function Settings() {
                   className="btn-secondary px-4"
                 >
                   {isDebugging ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-600"></div>
+                    <Spinner size="sm" color="secondary" />
                   ) : (
                     <Bug className="h-4 w-4" />
                   )}
@@ -682,7 +631,7 @@ export default function Settings() {
 
             {isLoadingInstances ? (
               <div className="text-center py-8">
-                <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-green-600 mx-auto"></div>
+                <Spinner size="md" color="primary" className="mx-auto" />
                 <p className="mt-2 text-sm text-gray-500">
                   Carregando instâncias...
                 </p>
@@ -744,7 +693,7 @@ export default function Settings() {
                   className="btn-primary px-4"
                 >
                   {isCreatingInstance ? (
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <Spinner size="sm" color="white" />
                   ) : (
                     <Plus className="h-4 w-4" />
                   )}
@@ -762,7 +711,7 @@ export default function Settings() {
             className="btn-primary flex-1 flex justify-center items-center"
           >
             {isLoading ? (
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+              <Spinner size="md" color="white" />
             ) : (
               "Salvar Configuração"
             )}
@@ -775,7 +724,7 @@ export default function Settings() {
             className="btn-secondary flex-1 flex justify-center items-center"
           >
             {isTesting ? (
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-gray-600"></div>
+              <Spinner size="md" color="secondary" />
             ) : (
               <>Testar Conexão</>
             )}
